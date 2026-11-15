@@ -1,3 +1,4 @@
+import { expiryConflicts } from "@/domain/services/expiry";
 import { prisma } from "@/infrastructure/database/prisma";
 import { n, round4 } from "@/shared/numbers";
 
@@ -33,4 +34,16 @@ export async function lotTraceability(lotId: string) {
     orderBy: { number: "asc" },
   });
   return { lot, backward, usedIn: usedInRows, sales };
+}
+
+/** RN-5.2: lotes de insumo usados en la OP que vencen antes que el lote producido. */
+export async function productionExpiryWarning(orderId: string) {
+  const order = await prisma.productionOrder.findUnique({ where: { id: orderId }, include: { outputLot: true } });
+  if (!order?.outputLot?.expiryDate) return [];
+  const moves = await prisma.stockMovement.findMany({
+    where: { documentType: "OP", documentId: orderId, type: "SAL_CONSUMO", lotId: { not: null } },
+    include: { lot: true, product: true },
+  });
+  const lots = new Map(moves.filter((m) => m.lot).map((m) => [m.lot!.id, { code: m.lot!.code, expiryDate: m.lot!.expiryDate, productName: m.product.name, lotId: m.lot!.id }]));
+  return expiryConflicts(order.outputLot.expiryDate, [...lots.values()]);
 }

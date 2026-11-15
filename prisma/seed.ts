@@ -231,6 +231,16 @@ async function main() {
   await inv.closeCycleCount(cc.id);
   await inv.approveCycleCount(cc.id);
 
+  // Historial realista para el Kardex y la gráfica de costo: el inventario inicial se cargó hace 45 días
+  // y la compra de karité llegó ayer (todo lo demás ocurrió en los últimos días).
+  const ago = (days: number) => new Date(Date.now() - days * day);
+  await prisma.stockMovement.updateMany({ where: { type: "INV_INICIAL" }, data: { createdAt: ago(45) } });
+  await prisma.container.updateMany({ where: { sourceType: "AJUSTE" }, data: { createdAt: ago(45) } });
+  await prisma.lot.updateMany({ where: { sourceType: "AJUSTE" }, data: { createdAt: ago(45) } });
+  await prisma.adjustment.updateMany({ where: { reason: "INVENTARIO_INICIAL" }, data: { createdAt: ago(45) } });
+  await prisma.stockMovement.updateMany({ where: { documentType: "OC", documentId: oc1.id }, data: { createdAt: ago(1) } });
+  await prisma.purchaseOrder.update({ where: { id: oc1.id }, data: { createdAt: ago(6), sentAt: ago(6) } });
+
   console.log("Datos de ejemplo de Botánica Viva creados.");
 }
 

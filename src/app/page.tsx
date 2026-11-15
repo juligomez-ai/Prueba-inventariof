@@ -2,12 +2,13 @@ import { AlertTriangle, ArrowRight, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { alerts, dashboard } from "@/application/use-cases/insights";
 import type { ReactNode } from "react";
+import { OnboardingChecklist } from "@/components/onboarding-checklist";
 import { Badge, ButtonLink, Card, CardBody, CardHeader, Empty, PageHeader, Stat } from "@/components/ui";
 import { prisma } from "@/infrastructure/database/prisma";
 import { fmtDate, fmtMoney, fmtPct } from "@/shared/numbers";
 
 export default async function Dashboard() {
-  const [k, al, shipments, setup] = await Promise.all([
+  const [k, al, shipments] = await Promise.all([
     dashboard(),
     alerts(),
     prisma.shipment.findMany({
@@ -16,15 +17,8 @@ export default async function Dashboard() {
       orderBy: { eta: "asc" },
       take: 5,
     }),
-    Promise.all([prisma.product.count(), prisma.stockMovement.count(), prisma.recipe.count(), prisma.productionOrder.count({ where: { status: "COMPLETADA" } })]),
   ]);
   const today = new Date();
-  const steps = [
-    { done: setup[0] > 0, text: "Crea tus insumos y productos", href: "/productos/nuevo" },
-    { done: setup[1] > 0, text: "Carga el inventario inicial", href: "/ajustes" },
-    { done: setup[2] > 0, text: "Crea tu primera fórmula", href: "/formulas" },
-    { done: setup[3] > 0, text: "Produce y revisa tu costo", href: "/produccion/nueva" },
-  ];
 
   return (
     <>
@@ -109,15 +103,10 @@ export default async function Dashboard() {
             )}
           </Card>
           <Card>
-            <CardHeader title="Primeros pasos" description="Guía de configuración (centro de ayuda)." />
-            <CardBody className="space-y-2 text-sm">
-              {steps.map((s, i) => (
-                <Link key={i} href={s.href} className="flex items-center gap-2 hover:underline">
-                  <span className={`flex h-5 w-5 items-center justify-center rounded-full text-xs ${s.done ? "bg-primary text-white" : "border border-border"}`}>{s.done ? "✓" : i + 1}</span>
-                  <span className={s.done ? "text-muted line-through" : ""}>{s.text}</span>
-                </Link>
-              ))}
-              <Link href="/ayuda" className="block pt-2 text-primary hover:underline">Ir al centro de ayuda →</Link>
+            <CardHeader title="Configuración" description="Se marca sola a medida que avanzas (RF-14.2)." />
+            <CardBody className="space-y-3 text-sm">
+              <OnboardingChecklist />
+              <Link href="/ayuda" className="block pt-1 text-primary hover:underline">Ir al centro de ayuda →</Link>
             </CardBody>
           </Card>
         </div>

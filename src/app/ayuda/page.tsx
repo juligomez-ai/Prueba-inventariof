@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { OnboardingChecklist } from "@/components/onboarding-checklist";
 import { Card, CardBody, CardHeader, PageHeader } from "@/components/ui";
 import { HELP_TOPICS } from "@/shared/help";
 import { movementLabel } from "@/shared/labels";
@@ -55,6 +56,11 @@ export default function Help() {
             ))}
           </ol>
         </CardBody>
+      </Card>
+
+      <Card className="mt-6">
+        <CardHeader title="Tu configuración" description="Lista de verificación con progreso: cada paso se marca solo cuando lo completas." />
+        <CardBody className="max-w-xl"><OnboardingChecklist /></CardBody>
       </Card>
 
       <div className="mt-6 grid gap-6 md:grid-cols-2">

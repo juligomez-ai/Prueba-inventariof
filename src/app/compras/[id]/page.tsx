@@ -42,7 +42,9 @@ export default async function PurchasePage(props: PageProps<"/compras/[id]">) {
           </span>
         }
         actions={
-          (o.status === "BORRADOR" || o.status === "ENVIADA" || o.status === "EN_TRANSITO") && (
+          <div className="flex flex-wrap gap-2">
+          <ButtonLink variant="outline" href={`/api/orden-compra/${o.id}`} target="_blank">OC en PDF</ButtonLink>
+          {(o.status === "BORRADOR" || o.status === "ENVIADA" || o.status === "EN_TRANSITO") && (
             <ActionForm action={purchaseTransitionAction}>
               <input type="hidden" name="id" value={o.id} />
               <div className="flex gap-2">
@@ -50,7 +52,8 @@ export default async function PurchasePage(props: PageProps<"/compras/[id]">) {
                 <SubmitButton name="op" value="cancel" variant="outline">Anular</SubmitButton>
               </div>
             </ActionForm>
-          )
+          )}
+          </div>
         }
       />
       {o.notes && <div className="mb-4"><Notice tone="blue">{o.notes}</Notice></div>}

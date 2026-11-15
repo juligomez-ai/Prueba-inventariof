@@ -8,6 +8,7 @@ import * as dispatches from "@/application/use-cases/dispatches";
 import * as inv from "@/application/use-cases/inventory";
 import * as production from "@/application/use-cases/production";
 import * as purchasing from "@/application/use-cases/purchasing";
+import { productionExpiryWarning } from "@/application/use-cases/traceability";
 import { errorMessage } from "@/shared/errors";
 
 // Fase 1 sin autenticación: un solo usuario administrador (S9).
@@ -178,7 +179,12 @@ export async function completeOrderAction(_: ActionResult | null, fd: FormData) 
       lotCode: opt(fd, "lotCode"),
       warehouseId: str(fd, "warehouseId"),
     });
-    return { message: "Orden completada: el lote quedó en cuarentena hasta su liberación." };
+    const warn = await productionExpiryWarning(str(fd, "id"));
+    return {
+      message: warn.length
+        ? `Orden completada: el lote quedó en cuarentena. Atención: vence después que ${warn.length} insumo(s); el más próximo es ${warn[0].productName}, lote ${warn[0].code} (RN-5.2).`
+        : "Orden completada: el lote quedó en cuarentena hasta su liberación.",
+    };
   });
 }
 

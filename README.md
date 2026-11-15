@@ -958,7 +958,7 @@ En `e2e/` hay dos scripts de Playwright:
 - **`rastreo.js`** visita todas las pantallas por sus enlaces y revisa estado HTTP, errores de consola, listas desplegables vacías y textos inválidos.
 - **`qa-modulos.js`** ejecuta, módulo por módulo, cada botón, filtro y lista: más de 100 verificaciones, entre ellas crear, editar, validar, escanear, recibir, producir, liberar, despachar, contar y generar los PDF.
 
-Se corren con la app encendida y los datos recién cargados (`npm run db:reset`).
+Se corren con la app encendida y los datos recién cargados (`npm run db:reset`), con `npm run qa:rastreo` y `npm run qa:modulos`. No son parte de `npm test`: necesitan Playwright (`npm i -D playwright` y `npx playwright install chromium`) y, para `qa-modulos`, `psql` y la variable `DATABASE_URL`.
 
 ### Despliegue en Vercel + Supabase
 

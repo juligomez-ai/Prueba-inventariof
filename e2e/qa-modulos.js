@@ -1,5 +1,5 @@
 // Uso: con la app corriendo y datos recién sembrados (npm run db:reset):
-//   DATABASE_URL=... node e2e/qa-modulos.js   (requiere playwright y psql)
+//   DATABASE_URL=... npm run qa:modulos   (requiere playwright y psql)
 // QA funcional: ejecuta cada botón, filtro y lista de cada módulo y registra PASA / FALLA sin detenerse.
 const { chromium } = require('playwright');
 const { execSync } = require('child_process');
@@ -218,7 +218,8 @@ const ok = (m, name, cond, extra = '') => { results.push(`${cond ? 'PASA ' : 'FA
     await p.click('text=Agregar insumo'); await p.locator('button[aria-label="Quitar"]').last().click();
     ok('Fórmulas', 'agregar y quitar fila', (await p.locator('select[name="item.ingredientId"]').count()) === 4);
     await p.click('button:has-text("Guardar fórmula")'); await p.waitForSelector('text=Costo por unidad', { timeout: 20000 });
-    const q = sql(`select ri.quantity from "RecipeItem" ri join "Recipe" r on r.id=ri."recipeId" join "Product" i on i.id=ri."ingredientId" where r."productId"='${pt}' and i.sku='MP-008'`);
+    let q = '';
+    for (let i = 0; i < 20 && !q; i++) { q = sql(`select ri.quantity from "RecipeItem" ri join "Recipe" r on r.id=ri."recipeId" join "Product" i on i.id=ri."ingredientId" where r."productId"='${pt}' and i.sku='MP-008'`); if (!q) await p.waitForTimeout(500); }
     ok('Fórmulas', 'guardar convierte 1400 ml → 1,4 L', Number(q) === 1.4, q);
   });
   await step('Fórmulas', 'editar y cancelar', async () => {
@@ -309,14 +310,14 @@ const ok = (m, name, cond, extra = '') => { results.push(`${cond ? 'PASA ' : 'FA
     ok('Compras', 'recepción parcial', (await text()).includes('Recibida parcial'));
     const e2 = await pdfPopup(() => p.locator('main a:has-text("Etiquetas (")').first().click()); ok('Compras', 'etiquetas de la recepción', e2.ok);
     await p.fill('input[name=supplierRemission]', 'RM-QA-2');
-    await p.locator('input[name="r.containers"]').last().fill('5');
+    await p.locator('fieldset', { hasText: 'Manteca de karité' }).locator('input[name="r.containers"]').fill('5');
     for (let i = 0; i < await p.locator('input[name="r.lotCode"]').count(); i++) {
       if (await p.locator('input[name="r.lotCode"]').nth(i).isEditable().catch(() => false)) {
         await p.locator('input[name="r.lotCode"]').nth(i).fill('QA-' + i); await p.locator('input[name="r.expiryDate"]').nth(i).fill('2027-12-31');
       }
     }
-    await p.click('button:has-text("Registrar recepción")'); await p.waitForSelector('main >> text=Recibida', { timeout: 20000 });
-    const st = (await text()).includes('RM-QA-2');
+    await p.click('button:has-text("Registrar recepción")');
+    const st = await p.waitForSelector('text=remisión RM-QA-2', { timeout: 20000 }).then(() => true).catch(() => false);
     ok('Compras', 'recepción final en 5 bultos', st);
     const karite = sql("select count(*) from \"Container\" c join \"Product\" p on p.id=c.\"productId\" join \"Lot\" l on l.id=c.\"lotId\" where p.sku='MP-001' and l.code like 'QA-%'");
     ok('Compras', '5 sacos de karité con serial', karite === '5', karite);
@@ -455,8 +456,9 @@ const ok = (m, name, cond, extra = '') => { results.push(`${cond ? 'PASA ' : 'FA
     await p.fill('input[name=quantity] >> nth=0', '0.5'); await p.selectOption('select[name=reason] >> nth=0', 'VENCIDO');
     await p.click('button:has-text("Registrar salida")');
     ok('Ajustes', 'salida/baja escaneando el serial', (await notice()).includes('registrado'));
-    await go('/ajustes'); const t = await text();
-    ok('Ajustes', 'historial y pérdidas por motivo', t.includes('Pérdidas') && t.includes('Baja'));
+    await notice(); await go('/ajustes');
+    const hasLoss = await p.waitForSelector('text=Pérdidas', { timeout: 15000 }).then(() => true).catch(() => false);
+    ok('Ajustes', 'historial y pérdidas por motivo', hasLoss && (await p.locator('main').textContent()).includes('Baja'));
   });
 
   // ───────── Bodegas y traslados

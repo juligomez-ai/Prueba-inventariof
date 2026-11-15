@@ -232,7 +232,7 @@ export async function completeProductionOrder(input: {
     await tx.lotStatusChange.create({
       data: { lotId: lot.id, fromStatus: "CUARENTENA", toStatus: "CUARENTENA", reason: `Lote producido en ${o.code}: pendiente de liberación por control de calidad`, userName: CURRENT_USER },
     });
-    // RN-5.2: alerta si vence después que su insumo más próximo a vencer (se muestra en la OP)
+    // RN-5.2 se evalúa al terminar (ver productionExpiryWarning en traceability.ts) y se muestra en la OP y el lote.
     actualCost = round2(actualCost);
     const unitCost = round4(actualCost / input.producedQty);
     await postEntry(tx, {

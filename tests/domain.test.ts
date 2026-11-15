@@ -96,3 +96,18 @@ describe("indicadores del tablero", () => {
     expect(v.variance).toBeCloseTo(100);
   });
 });
+
+import { expiryConflicts } from "@/domain/services/expiry";
+describe("RN-5.2 vencimiento del producto vs insumos", () => {
+  const d = (s: string) => new Date(s);
+  it("alerta con los insumos que vencen antes, el más próximo primero", () => {
+    const r = expiryConflicts(d("2028-01-01"), [
+      { code: "A", expiryDate: d("2029-01-01") },
+      { code: "B", expiryDate: d("2027-06-01") },
+      { code: "C", expiryDate: d("2027-03-01") },
+      { code: "D", expiryDate: null },
+    ]);
+    expect(r.map((x) => x.code)).toEqual(["C", "B"]);
+  });
+  it("sin vencimiento del producto no hay alerta", () => expect(expiryConflicts(null, [{ expiryDate: d("2020-01-01") }])).toEqual([]));
+});

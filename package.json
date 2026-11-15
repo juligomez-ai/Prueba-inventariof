@@ -13,7 +13,9 @@
     "postinstall": "prisma generate",
     "vercel-build": "prisma generate && prisma migrate deploy && prisma db seed && next build",
     "db:reset": "SEED_RESET=1 prisma db seed",
-    "check:seed": "tsx scripts/check-seed.ts"
+    "check:seed": "tsx scripts/check-seed.ts",
+    "qa:rastreo": "node e2e/rastreo.js",
+    "qa:modulos": "node e2e/qa-modulos.js"
   },
   "dependencies": {
     "@google/genai": "^3.3.0",

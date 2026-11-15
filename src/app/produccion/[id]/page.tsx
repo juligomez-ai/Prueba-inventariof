@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { completeOrderAction, orderTransitionAction } from "@/app/actions";
 import { checkFeasibility } from "@/application/use-cases/production";
+import { productionExpiryWarning } from "@/application/use-cases/traceability";
 import { ActionForm, SubmitButton } from "@/components/action-form";
 import { LotStatusBadge, OpStatusBadge } from "@/components/badges";
 import { FeasibilityTable } from "@/components/feasibility-table";
@@ -34,6 +35,7 @@ export default async function OrderPage(props: PageProps<"/produccion/[id]">) {
   const theoretical = n(o.theoreticalCost);
   const actual = o.actualCost !== null ? n(o.actualCost) : null;
   const ptWarehouse = warehouses.find((w) => w.type === "PRODUCTO_TERMINADO");
+  const expiryWarn = o.status === "COMPLETADA" ? await productionExpiryWarning(o.id) : [];
 
   return (
     <>
@@ -138,6 +140,16 @@ export default async function OrderPage(props: PageProps<"/produccion/[id]">) {
             </ActionForm>
           </CardBody>
         </Card>
+      )}
+
+      {expiryWarn.length > 0 && o.outputLot && (
+        <div className="mt-6">
+          <Notice tone="yellow">
+            <b>Alerta de vencimiento (RN-5.2):</b> el lote {o.outputLot.code} vence el {fmtDate(o.outputLot.expiryDate)}, después que {expiryWarn.length} de sus insumos:{" "}
+            {expiryWarn.map((l, i) => <span key={l.lotId}>{i > 0 && ", "}<Link className="underline" href={`/lotes/${l.lotId}`}>{l.productName} ({l.code}, vence {fmtDate(l.expiryDate)})</Link></span>)}.
+            {" "}Revisa la vida útil declarada o ajusta el vencimiento al etiquetar.
+          </Notice>
+        </div>
       )}
 
       {o.outputLot && (

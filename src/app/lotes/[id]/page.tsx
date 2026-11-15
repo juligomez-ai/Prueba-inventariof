@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { lotTraceability } from "@/application/use-cases/traceability";
+import { lotTraceability, productionExpiryWarning } from "@/application/use-cases/traceability";
 import { ContainerStatusBadge, ExpiryBadge, LotStatusBadge, MovementBadge } from "@/components/badges";
 import { LotStatusForm } from "@/components/lot-status-form";
-import { Card, CardBody, CardHeader, Empty, PageHeader, Table, Td, Th } from "@/components/ui";
+import { Card, CardBody, CardHeader, Empty, Notice, PageHeader, Table, Td, Th } from "@/components/ui";
 import { prisma } from "@/infrastructure/database/prisma";
 import { fmtDate, fmtDateTime, fmtQty, n } from "@/shared/numbers";
 
@@ -18,6 +18,7 @@ export default async function LotPage(props: PageProps<"/lotes/[id]">) {
     prisma.stockMovement.findMany({ where: { lotId: id }, orderBy: { number: "asc" }, include: { container: true } }),
   ]);
   const u = lot.product.baseUnit;
+  const expiryWarn = lot.productionOrder ? await productionExpiryWarning(lot.productionOrder.id) : [];
   return (
     <>
       <PageHeader
@@ -29,6 +30,13 @@ export default async function LotPage(props: PageProps<"/lotes/[id]">) {
           </span>
         }
       />
+      {expiryWarn.length > 0 && (
+        <div className="mb-4">
+          <Notice tone="yellow">
+            <b>Alerta de vencimiento (RN-5.2):</b> este lote vence después que {expiryWarn.length} insumo(s) con que se fabricó. El más próximo: {expiryWarn[0].productName}, lote {expiryWarn[0].code}, vence {fmtDate(expiryWarn[0].expiryDate)}.
+          </Notice>
+        </div>
+      )}
       <div className="grid gap-6 lg:grid-cols-3">
         <Card>
           <CardHeader title="Origen" />

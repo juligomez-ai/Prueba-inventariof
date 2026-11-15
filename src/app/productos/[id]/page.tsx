@@ -3,11 +3,12 @@ import { notFound } from "next/navigation";
 import { archiveProductAction, markOpenAction } from "@/app/actions";
 import { inTransitByProduct } from "@/application/use-cases/insights";
 import { ActionForm, SubmitButton } from "@/components/action-form";
+import { CostHistoryChart } from "@/components/cost-history-chart";
 import { ContainerStatusBadge, ExpiryBadge, LotStatusBadge, MovementBadge, ProductTypeBadge, StockLight } from "@/components/badges";
 import { Badge, ButtonLink, Card, CardHeader, Empty, PageHeader, Stat, Table, Td, Th } from "@/components/ui";
 import { prisma } from "@/infrastructure/database/prisma";
 import { stockSummary } from "@/infrastructure/database/stock";
-import { documentHref } from "@/shared/labels";
+import { documentHref, movementLabel } from "@/shared/labels";
 import { fmtDate, fmtDateTime, fmtMoney, fmtPct, fmtQty, n } from "@/shared/numbers";
 
 export default async function ProductPage(props: PageProps<"/productos/[id]">) {
@@ -25,6 +26,11 @@ export default async function ProductPage(props: PageProps<"/productos/[id]">) {
   if (!p) notFound();
   const s = (await stockSummary(prisma, [p.id])).get(p.id) ?? { onHand: 0, reserved: 0, quarantine: 0, blocked: 0, available: 0 };
   const transit = (await inTransitByProduct()).get(p.id) ?? 0;
+  // RF-4.7: puntos donde cambió el costo promedio (más el primero)
+  const costMoves = await prisma.stockMovement.findMany({ where: { productId: p.id }, orderBy: { number: "asc" }, select: { createdAt: true, avgCostBefore: true, avgCostAfter: true, documentNumber: true, type: true } });
+  const costPoints = costMoves
+    .filter((m, i) => i === 0 || Math.abs(n(m.avgCostAfter) - n(m.avgCostBefore)) > 0.005)
+    .map((m) => ({ at: m.createdAt.toISOString(), cost: n(m.avgCostAfter), doc: m.documentNumber, movement: movementLabel[m.type].name }));
   const avg = n(p.avgCost);
   const price = n(p.salePrice);
   const u = p.baseUnit;
@@ -71,6 +77,15 @@ export default async function ProductPage(props: PageProps<"/productos/[id]">) {
         {price > 0 && <span>Precio de venta {fmtMoney(price)}</span>}
         {p.type === "PRODUCTO_TERMINADO" && <Link className="text-primary hover:underline" href={`/formulas/${p.id}`}>{p.recipe ? "Ver fórmula" : "Crear fórmula"}</Link>}
       </div>
+
+      <Card className="mt-6">
+        <CardHeader
+          title="Historial del costo promedio"
+          description={`Costo por ${u}. Cambia con cada compra o producción; las salidas no lo modifican (RN-4.1).`}
+          actions={<Link className="text-sm text-primary hover:underline" href={`/kardex?producto=${p.id}`}>Ver en tabla (Kardex)</Link>}
+        />
+        <CostHistoryChart points={costPoints} unit={u} now={new Date().toISOString()} />
+      </Card>
 
       <Card className="mt-6">
         <CardHeader title="Bultos en inventario" description="Cada saco, garrafa o caja con su serial (M5.1). La suma cuadra con el Kardex." />
