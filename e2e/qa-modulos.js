@@ -37,6 +37,13 @@ const ok = (m, name, cond, extra = '') => { results.push(`${cond ? 'PASA ' : 'FA
   const rows = async (tableSel = 'main table') => p.locator(`${tableSel} tbody tr`).count();
   const scan = async (code) => { await p.fill('input[aria-label="Código escaneado"]', code); await p.keyboard.press('Enter'); };
 
+  const K = {
+    karSerial: sql("select c.serial from \"Container\" c join \"Lot\" l on l.id=c.\"lotId\" where l.code='KT-2291' limit 1"),
+    remVidaSana: sql("select code from \"Dispatch\" where \"salesRef\"='FE-1043'"),
+    lotQC: sql("select l.code from \"Lot\" l join \"Product\" p on p.id=l.\"productId\" where p.sku='MP-001' and l.status='DISPONIBLE' and exists (select 1 from \"Container\" c where c.\"lotId\"=l.id and c.status in ('SELLADO','ABIERTO')) order by l.\"createdAt\" desc limit 1"),
+    ocDraft: sql("select id from \"PurchaseOrder\" where notes like 'Reposición antes de temporada%'"),
+    remPending: sql("select code from \"Dispatch\" where status='PENDIENTE' and \"customerName\" like 'Farmacia Botánica%' order by code desc limit 1"),
+  };
   // ───────── Navegación
   await step('Navegación', 'menú lateral', async () => {
     await go('/');
@@ -143,8 +150,8 @@ const ok = (m, name, cond, extra = '') => { results.push(`${cond ? 'PASA ' : 'FA
       ['tipo', 'tipo=SAL_CONSUMO', (t) => !t.includes('Inventario inicial')],
       ['bodega', `bodega=${sql("select id from \"Warehouse\" where code='BOD-PT'")}`, (t) => !t.includes('BOD-MP')],
       ['lote', 'lote=KT-2291', (t) => t.includes('KT-2291')],
-      ['serial', 'serial=MP-001-000002', (t) => t.includes('MP-001-000002')],
-      ['documento', 'documento=REM-0001', (t) => t.includes('REM-0001')],
+      ['serial', `serial=${K.karSerial}`, (t) => t.includes(K.karSerial)],
+      ['documento', `documento=${K.remVidaSana}`, (t) => t.includes(K.remVidaSana)],
       ['remisión', 'remision=RM-55821', (t) => t.includes('RM-55821')],
       ['tercero', 'tercero=Vida Sana', (t) => t.includes('Vida Sana')],
       ['fechas', `desde=2020-01-01&hasta=2099-12-31`, () => true],
@@ -179,14 +186,14 @@ const ok = (m, name, cond, extra = '') => { results.push(`${cond ? 'PASA ' : 'FA
     ok('Lotes', 'búsqueda por producto', names.length > 0 && names.every(n => n.includes('karité')), `${names.length}`);
   });
   await step('Calidad', 'cuarentena, rechazo y liberación', async () => {
-    const lot = sql("select id from \"Lot\" where code='GL-0587'");
+    const lot = sql(`select id from "Lot" where code='${K.lotQC}'`);
     await go(`/lotes/${lot}`);
     await p.click('button:has-text("Poner en cuarentena")');
     ok('Calidad', 'nota obligatoria', (await p.locator('input[name=note]').evaluate(e => !e.checkValidity())));
     await p.fill('input[name=note]', 'Proveedor reporta posible contaminación');
     await p.click('button:has-text("Poner en cuarentena")'); await p.waitForSelector('main >> text=Liberar', { timeout: 15000 });
     ok('Calidad', 'poner en cuarentena', sql(`select status from "Lot" where id='${lot}'`) === 'CUARENTENA');
-    await go('/calidad'); ok('Calidad', 'aparece en pendientes de liberación', (await text()).includes('GL-0587'));
+    await go('/calidad'); ok('Calidad', 'aparece en pendientes de liberación', (await text()).includes(K.lotQC));
     await go(`/lotes/${lot}`); await p.fill('input[name=note]', 'Análisis no conforme');
     await p.click('button:has-text("Rechazar / bloquear")'); await p.waitForTimeout(1500);
     ok('Calidad', 'rechazar', sql(`select status from "Lot" where id='${lot}'`) === 'BLOQUEADO');
@@ -323,7 +330,7 @@ const ok = (m, name, cond, extra = '') => { results.push(`${cond ? 'PASA ' : 'FA
     ok('Compras', '5 sacos de karité con serial', karite === '5', karite);
   });
   await step('Compras', 'validaciones de recepción y anular', async () => {
-    const po = sql("select id from \"PurchaseOrder\" where code='OC-0003'");
+    const po = K.ocDraft;
     await go(`/compras/${po}`);
     await p.click('button:has-text("Marcar como enviada")'); await p.waitForSelector('text=Recibir mercancía', { timeout: 15000 });
     await p.fill('input[name=supplierRemission]', 'RM-QA-3'); await p.locator('input[name="r.quantity"]').first().fill('9');
@@ -369,7 +376,7 @@ const ok = (m, name, cond, extra = '') => { results.push(`${cond ? 'PASA ' : 'FA
     ok('Despachos', 'eliminar despacho pendiente', true);
   });
   await step('Despachos', 'alistar con escáner, despachar, POD y entrega', async () => {
-    await go('/despachos'); await p.click('main a:has-text("REM-0002")');
+    await go('/despachos'); await p.click(`main a:has-text("${K.remPending}")`);
     await p.click('button:has-text("Alistar")'); await p.waitForSelector('text=Lista de alistamiento', { timeout: 20000 });
     await scan('NO-EXISTE'); ok('Despachos', 'escanear caja no asignada da error', await p.locator('.border-red-200:has-text("no está asignado")').isVisible({ timeout: 10000 }).catch(() => false) || await p.waitForSelector('text=no está asignado', { timeout: 10000 }).then(() => true).catch(() => false));
     await p.fill('input[name=trackingNumber]', '7000'); await p.getByRole('button', { name: 'Despachar' }).click();
@@ -386,7 +393,7 @@ const ok = (m, name, cond, extra = '') => { results.push(`${cond ? 'PASA ' : 'FA
     ok('Despachos', 'adjuntar remisión firmada (POD)', true);
     await p.selectOption('select[name=status]', 'ENTREGADO'); await p.fill('input[name=note]', 'Recibió QA');
     await p.click('button:has-text("Registrar estado")'); await p.waitForSelector('main >> text=Entregado', { timeout: 15000 });
-    ok('Despachos', 'evento Entregado actualiza el despacho', sql("select status from \"Dispatch\" where code='REM-0002'") === 'ENTREGADO');
+    ok('Despachos', 'evento Entregado actualiza el despacho', sql(`select status from "Dispatch" where code='${K.remPending}'`) === 'ENTREGADO');
     const pdf = await p.request.get(base + '/api/remision/' + p.url().split('/').pop());
     ok('Despachos', 'remisión PDF', pdf.status() === 200 && (pdf.headers()['content-type'] || '').includes('pdf'));
     await go('/despachos'); ok('Despachos', 'lista y contadores', (await rows()) >= 2);
@@ -468,7 +475,7 @@ const ok = (m, name, cond, extra = '') => { results.push(`${cond ? 'PASA ' : 'FA
     await f.locator('input[name=code]').fill('BOD-QA'); await f.locator('input[name=name]').fill('Bodega QA'); await f.locator('select[name=type]').selectOption('EMPAQUE');
     await f.locator('button:has-text("Crear bodega")').click(); await p.waitForSelector('main td:has-text("BOD-QA")', { timeout: 15000 });
     ok('Bodegas', 'crear bodega', true);
-    const s1 = sql("select serial from \"Container\" c join \"Product\" p on p.id=c.\"productId\" where p.sku='EMP-009' and c.status='SELLADO' limit 1");
+    const s1 = sql("select serial from \"Container\" c join \"Product\" p on p.id=c.\"productId\" join \"Warehouse\" w on w.id=c.\"warehouseId\" where w.code='BOD-EMP' and p.type='EMPAQUE' and c.status in ('SELLADO','ABIERTO') and c.\"currentQty\" > 60 order by c.\"currentQty\" desc limit 1");
     await scan(s1); await p.waitForSelector('select[name=toWarehouseId]', { timeout: 15000 });
     await p.selectOption('select[name=toWarehouseId]', { label: 'BOD-QA · Bodega QA' });
     await p.click('button:has-text("Trasladar")'); await p.waitForTimeout(2000);

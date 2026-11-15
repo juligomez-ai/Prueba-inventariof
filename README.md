@@ -279,7 +279,7 @@ Convenciones: **RF** = requerimiento funcional · **RN** = regla de negocio · *
 | RN-3.2 | Todo cambio de stock ocurre **solo** a través de un movimiento; no existe "editar stock" directo |
 | RN-3.3 | Por defecto no se permite stock negativo (configurable a futuro) |
 | RN-3.4 | **No existe un movimiento sin documento soporte.** Si un dato obligatorio de trazabilidad falta (lote en un producto que lo controla, remisión en una salida a cliente, motivo en un ajuste), el movimiento no se guarda |
-| CA-3.1 | Desde el saldo de 112 cremas se abre el Kardex; al hacer clic en la salida de 24 u se ve la remisión REM-0003, el cliente, el lote, los seriales de las cajas, la guía y quién la registró |
+| CA-3.1 | Desde el saldo de cremas se abre el Kardex; al hacer clic en una salida por venta se ve la remisión, el cliente, el lote, los seriales de las cajas, la guía y quién la registró |
 
 **Convención de códigos:** todos los códigos de estados, tipos de producto y tipos de movimiento están en español, porque es una PyME colombiana. En los movimientos y documentos se agrega la sigla internacional de logística.
 
@@ -397,7 +397,7 @@ Convenciones: **RF** = requerimiento funcional · **RN** = regla de negocio · *
 | RF-6.8 | Exportar OC a PDF para enviar al proveedor |
 | RN-6.1 | El costo que entra al inventario es el precio unitario **sin IVA** convertido a la unidad base |
 | RN-6.2 | Solo una OC en `ENVIADA` o posterior suma al stock "en tránsito / por llegar" |
-| CA-6.1 | Al recibir 3 kg de karité de la OC-0001, el stock sube 3 kg, aparece el lote en BOD-MP y el Kardex muestra el nuevo costo promedio |
+| CA-6.1 | Al recibir 3 kg de karité de una OC, el stock sube 3 kg, aparece el lote en BOD-MP y el Kardex muestra el nuevo costo promedio |
 
 ### M7 · Tracking de envíos entrantes
 
@@ -432,7 +432,7 @@ Convenciones: **RF** = requerimiento funcional · **RN** = regla de negocio · *
 | RN-8.1 | Una fórmula solo usa insumos y empaques (no productos terminados) |
 | RN-8.2 | Las cantidades se convierten a la unidad base del insumo al guardar |
 | RN-8.3 | Editar una fórmula **no** cambia las OPs ya creadas: cada OP guarda una copia de sus cantidades al crearse |
-| CA-8.1 | La fórmula de crema de karité (rinde 100 u) muestra costo de $292.040 por lote y $2.920 por unidad con los datos semilla |
+| CA-8.1 | La fórmula de crema de karité (rinde 100 u) con los costos de referencia del [§9.2](#92-costo-de-una-orden-de-producción) muestra $292.040 por lote y $2.920 por unidad |
 
 **Simplificaciones del MVP (pasan a Fase 2):** fórmulas multinivel con productos intermedios (ej. una base emoliente que se usa en varias cremas), vista en porcentaje de fórmula, historial de versiones y % de merma esperada por insumo.
 
@@ -465,7 +465,7 @@ stateDiagram-v2
 | RN-9.1 | No se puede iniciar una OP sin stock disponible suficiente (en el MVP no se permite producción parcial con faltantes) |
 | RN-9.2 | Una OP completada es inmutable; un error se corrige con ajuste |
 | RN-9.3 | Anular una OP en proceso libera sus reservas y no genera movimientos |
-| CA-9.1 | Al completar OP-0001 de 100 cremas: karité baja 0,8 kg, frascos bajan 100, crema sube 100 u con lote nuevo y costo $2.920,40 c/u; todo visible en el Kardex con referencia OP-0001 |
+| CA-9.1 | Al completar una OP de 100 cremas: karité baja 0,8 kg, frascos bajan 100, crema sube 100 u con lote nuevo y costo $2.920,40 c/u (costos de referencia del §9); todo visible en el Kardex con la referencia de la OP |
 
 ### M10 · Conteo cíclico con escáner
 
@@ -528,7 +528,7 @@ flowchart LR
 | RF-12.6 | Línea de tiempo de eventos de tracking (manual en MVP) y enlace a la página oficial de rastreo (RF-7.3b) |
 | RF-12.7 | Tablero de despachos: pendientes, en tránsito, con novedad, entregados |
 | RN-12.1 | No se despachan lotes vencidos, en cuarentena ni con vencimiento menor a X días (configurable, por defecto 90) |
-| CA-12.1 | El despacho REM-0003 de 24 cremas descuenta del lote más próximo a vencer y la trazabilidad del lote muestra al cliente |
+| CA-12.1 | Un despacho de 24 cremas descuenta del lote más próximo a vencer y la trazabilidad del lote muestra al cliente |
 
 ### M13 · Copiloto IA
 
@@ -619,7 +619,7 @@ Esta es la pregunta central del reto. La respuesta: **la manufactura no tiene su
 3. **El costo fluye:** el costo promedio de los insumos se convierte en el costo del producto terminado, que luego se usa al venderlo.
 4. **Disponibilidad compartida:** una reserva de una OP reduce el disponible para despachos, y viceversa.
 
-### Flujo completo (ejemplo: 100 cremas)
+### Flujo completo (ejemplo ilustrativo: 100 cremas)
 
 ```mermaid
 sequenceDiagram
@@ -643,7 +643,7 @@ sequenceDiagram
   INV-->>L: Kardex y valor de inventario actualizados
 ```
 
-### Antes y después en el inventario
+### Antes y después en el inventario (ejemplo ilustrativo)
 
 | Producto | Antes | Movimiento | Después |
 |---|---|---|---|
@@ -656,13 +656,15 @@ sequenceDiagram
 
 ## 9. Costos: cómo se calculan
 
+> Las cifras de esta sección son un **ejemplo de referencia** para explicar el cálculo. En el demo los costos son los que resultan de 6 meses de compras con precios que suben poco a poco, así que los valores exactos difieren (por ejemplo, la crema queda cerca de $2.960 por unidad).
+
 ### 9.1 Costo promedio ponderado al comprar
 
 | Evento | Cantidad | Costo unit. | Valor | Saldo cant. | Saldo valor | **Costo promedio** |
 |---|---|---|---|---|---|---|
 | Saldo inicial karité | 2 kg | $57.000 | $114.000 | 2 kg | $114.000 | $57.000 |
-| Compra OC-0001 (sin IVA) | 3 kg | $62.000 | $186.000 | 5 kg | $300.000 | **$60.000** |
-| Consumo OP-0001 | −0,8 kg | $60.000 | −$48.000 | 4,2 kg | $252.000 | $60.000 (no cambia) |
+| Compra (sin IVA) | 3 kg | $62.000 | $186.000 | 5 kg | $300.000 | **$60.000** |
+| Consumo en una OP | −0,8 kg | $60.000 | −$48.000 | 4,2 kg | $252.000 | $60.000 (no cambia) |
 
 ### 9.2 Costo de una orden de producción
 
@@ -734,7 +736,7 @@ flowchart LR
 - Si el modelo no identifica el producto con certeza, pregunta ("¿Te refieres a la crema de karité 50 g o la de 100 g?").
 
 ### Ejemplos
-- *"¿Me alcanza el inventario para 250 cremas de karité?"* → "Puedes producir máximo 140. Faltan 110 frascos, 110 tapas y 110 etiquetas." + tarjeta de orden de producción + una orden de compra por proveedor (envases y etiquetas).
+- *"¿Me alcanza el inventario para 250 cremas de karité?"* → indica el máximo producible con el stock disponible y los faltantes exactos por insumo (con los datos del demo: frascos, tapas, etiquetas y algunos insumos), y muestra la tarjeta de orden de producción + una orden de compra por cada proveedor.
 - *"Para 100 bálsamos uso 400 g de cera de abejas, 300 g de manteca de cacao, 280 ml de aceite de coco, 20 ml de vitamina E y 100 tubos"* → propuesta de fórmula con cada línea mapeada a su SKU y convertida a la unidad base (400 g → 0,4 kg), con costo por lote ($104.140) y por unidad. Si un insumo no existe, pide crearlo en Productos.
 - *"¿Qué lotes vencen en los próximos 60 días?"* → lista de lotes con días restantes.
 - *"¿Cómo registro la llegada de una compra?"* → pasos del centro de ayuda.
@@ -954,6 +956,14 @@ npm run db:reset
 
 `npm test` corre las pruebas de reglas de negocio, `npm run check:seed` verifica que los números cuadren con este README y que el Kardex cuadre con los bultos, y `npm run db:reset` borra todo y vuelve a cargar los datos de ejemplo (solo para desarrollo).
 
+### Datos de ejemplo
+
+`npm run db:seed` carga a **Botánica Viva** con 6 meses de operación (`prisma/seed.ts` y `prisma/seed-history.ts`), creada con los mismos casos de uso de la aplicación (el Kardex, los costos y los bultos cuadran):
+- Inventario inicial hace 6 meses, al "implementar SYNTHEX".
+- Semana a semana: compras de los insumos faltantes (precios que suben ~0,5 % al mes), producción cuando el stock no cubre ~2,5 semanas de demanda, liberación por calidad y despachos a cinco clientes. La demanda tiene temporadas: Día de la Madre (mayo), Amor y Amistad (septiembre) y fin de año.
+- Cada mes, una baja por daño y un conteo cíclico de empaques.
+- La última semana deja listo el recorrido del demo: compra de envases retrasada, glicerina de corta fecha, jabón en cuarentena, remisión pendiente, orden de serum en borrador y compra de lavanda en borrador.
+
 ### QA de punta a punta
 
 En `e2e/` hay dos scripts de Playwright:
@@ -978,12 +988,15 @@ Se corren con la app encendida y los datos recién cargados (`npm run db:reset`)
 
 ## 17. Recorrido sugerido del demo
 
-1. **Tablero:** valor del inventario, alertas (glicerina por vencer, OC de envases retrasada, jabón en cuarentena) y "Por llegar".
-2. **Copiloto:** "Quiero producir 250 cremas de karité, ¿me alcanza el inventario?" → máximo 140, faltan 110 frascos, tapas y etiquetas → confirmar la orden y las compras.
-3. **Fórmulas:** la crema cuesta $2.920 por unidad y el empaque es casi el 60% del costo.
-4. **Producción:** crear una orden de 100 cremas → iniciar (reserva FEFO) → completar con 98 buenas en cajas de 24 → el lote queda en cuarentena con sus seriales y etiquetas.
-5. **Control de calidad:** liberar el lote con una nota.
-6. **Despachos:** REM-0002 → alistar → escanear cada caja → despachar con guía → descargar la remisión PDF.
-7. **Compras:** recibir la OC-0002 con la remisión del proveedor; ver cómo cambia el costo promedio en el Kardex.
-8. **Conteo cíclico:** escanear una caja sellada (un escaneo) y una abierta (pide contar, sin mostrar el sistema) → cerrar → revisar → aprobar el ajuste.
-9. **Trazabilidad:** desde el lote del bálsamo, ver los lotes de insumos usados y el cliente al que llegó.
+Los datos de ejemplo traen **6 meses de historia** (ver [Datos de ejemplo](#datos-de-ejemplo)), así que los números exactos dependen del día en que se cargaron. Los documentos se identifican por lo que son, no por su número.
+
+1. **Tablero:** cambia entre 30 días, 3 y 6 meses. Mira el valor del inventario contra el período anterior y las entradas vs salidas por semana (se notan Amor y Amistad en septiembre y la temporada de fin de año). Abajo, las alertas: glicerina de corta fecha por vencer, la compra de envases retrasada y el jabón en cuarentena.
+2. **Copiloto:** "Quiero producir 250 cremas de karité, ¿me alcanza el inventario?" → máximo producible y faltantes exactos → confirmar la orden y las compras (una por proveedor).
+3. **Fórmulas:** la crema cuesta cerca de $2.960 por unidad y el empaque es alrededor del 60% del costo.
+4. **Producto (ej. manteca de karité):** gráfica del historial del costo promedio, que sube con cada compra.
+5. **Producción:** crear una orden de 100 cremas → iniciar (reserva FEFO) → completar con 98 buenas en cajas de 24 → el lote queda en cuarentena con sus seriales y etiquetas.
+6. **Control de calidad:** liberar el lote del jabón con una nota.
+7. **Despachos:** la remisión pendiente de Farmacia Botánica El Poblado → alistar → escanear cada caja → despachar con guía → descargar la remisión PDF.
+8. **Compras:** la orden de compra de envases en tránsito (retrasada) → descargar la OC en PDF → recibirla con la remisión del proveedor → ver cómo cambia el costo promedio en el Kardex.
+9. **Conteo cíclico:** escanear una caja sellada (un escaneo) y una abierta (pide contar, sin mostrar el sistema) → cerrar → revisar → aprobar el ajuste.
+10. **Trazabilidad:** desde un lote de bálsamo, ver los lotes de insumos usados y los clientes a los que llegó; la orden muestra la alerta de vencimiento si el producto vence después que algún insumo.

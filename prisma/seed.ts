@@ -11,6 +11,7 @@ import * as dispatches from "@/application/use-cases/dispatches";
 import * as inv from "@/application/use-cases/inventory";
 import * as production from "@/application/use-cases/production";
 import * as purchasing from "@/application/use-cases/purchasing";
+import { createSimulator } from "./seed-history";
 
 const prisma = new PrismaClient();
 const day = 86_400_000;
@@ -107,7 +108,6 @@ async function main() {
     { p: "karite", wh: "MP", qty: 2, cost: 57000, lot: "KT-2210", exp: 220 },
     { p: "almendras", wh: "MP", qty: 8, cost: 45000, bultos: 2, lot: "AL-0931", exp: 300 },
     { p: "ceraEmul", wh: "MP", qty: 4, cost: 38000, lot: "CE-118", exp: 400 },
-    { p: "glicerina", wh: "MP", qty: 1, cost: 12000, lot: "GL-0412", exp: 25 },
     { p: "glicerina", wh: "MP", qty: 4, cost: 12000, lot: "GL-0587", exp: 500 },
     { p: "vitE", wh: "MP", qty: 0.5, cost: 180000, lot: "VE-2207", exp: 280 },
     { p: "conservante", wh: "MP", qty: 0.5, cost: 120000, lot: "CN-339", exp: 350 },
@@ -132,11 +132,15 @@ async function main() {
     { p: "cajaSerum", wh: "EMP", qty: 150, cost: 700 },
     { p: "crema", wh: "PT", qty: 12, cost: 2850, lot: "PT001-260901-01", exp: 290 },
   ];
+  // El inventario inicial se cargó hace 6 meses, al implementar SYNTHEX
+  const start = new Date(Date.now() - 182 * day);
+  start.setHours(8, 0, 0, 0);
+  const sim = createSimulator({ prisma, P, W, S, C, baseCost: new Map(initial.map((i) => [P[i.p].id, i.cost])), start, untilDaysAgo: 8 });
   for (const i of initial)
-    await inv.adjustUp({
+    await sim.at(start, () => inv.adjustUp({
       productId: P[i.p].id, warehouseId: W[i.wh].id, quantity: i.qty, containers: i.bultos ?? 1, unitCost: i.cost,
       lotCode: i.lot, expiryDate: i.exp ? inDays(i.exp) : null, reason: "INVENTARIO_INICIAL", notes: "Saldo inicial al implementar SYNTHEX",
-    });
+    }));
 
   // ── Fórmulas (M8)
   const item = (k: keyof typeof defs, quantity: number, unit?: string) => ({ ingredientId: P[k].id, quantity, unit: unit ?? defs[k].baseUnit });
@@ -161,55 +165,108 @@ async function main() {
     items: [item("agua", 1.2), item("glicerina", 0.15), item("vitC", 0.06), item("hialuronico", 5, "g"), item("conservante", 15, "g"), item("gotero", 50), item("etiquetaSerum", 50), item("cajaSerum", 50)],
   });
 
-  // ── Compra recibida: karité (README §9.1: 2 kg a $57.000 + 3 kg a $62.000 = $60.000)
-  const oc1 = await purchasing.createPurchaseOrder({ supplierId: S.oleo.id, lines: [{ productId: P.karite.id, quantity: 3, unit: "kg", unitPrice: 62000 }] });
-  await purchasing.sendPurchaseOrder(oc1.id);
-  const sh1 = await purchasing.addShipment({ purchaseOrderId: oc1.id, carrierId: C.servientrega.id, trackingNumber: "2154879631", shippedAt: inDays(-3), eta: inDays(-1) });
-  await purchasing.addShipmentEvent(sh1.id, "EN_TRANSITO", "En ruta Medellín", inDays(-2));
-  await purchasing.addShipmentEvent(sh1.id, "ENTREGADO", "Recibido en portería", inDays(-1));
-  const oc1Line = await prisma.purchaseOrderLine.findFirstOrThrow({ where: { orderId: oc1.id } });
-  await purchasing.receivePurchaseOrder({
-    orderId: oc1.id, supplierRemission: "RM-55821", warehouseId: W.MP.id,
-    lines: [{ lineId: oc1Line.id, quantity: 3, lotCode: "KT-2291", expiryDate: inDays(590), containers: 1 }],
+  // ── 6 meses de historia semana a semana (ver seed-history.ts)
+  console.log("Simulando 6 meses de historia…");
+  await sim.run();
+
+  // ── Escenario actual (última semana): lo que se usa en el recorrido del demo
+  // Insumos suficientes para las órdenes de esta semana
+  const lastWeek = new Date(Date.now() - 7 * day);
+  await sim.buyFor(P.balsamo as never, 100, lastWeek);
+  await sim.buyFor(P.jabon as never, 40, lastWeek);
+  await sim.buyFor(P.serum as never, 50, lastWeek);
+
+  // Orden cronológico de la última semana (el Kardex queda en orden de fechas)
+  // ── Compra en tránsito con retraso (alerta): envases
+  const oc2 = await sim.at(inDays(-8), async () => {
+    const o = await purchasing.createPurchaseOrder({
+      supplierId: S.envases.id, expectedDate: inDays(-1),
+      lines: [
+        { productId: P.frasco.id, quantity: 1, unit: "Caja x200", unitPrice: 240000 },
+        { productId: P.tapa.id, quantity: 1, unit: "Caja x200", unitPrice: 60000 },
+      ],
+    });
+    await purchasing.sendPurchaseOrder(o.id);
+    return o;
+  });
+  // ── Compra de karité: pedida hace 6 días, recibida ayer
+  const oc1 = await sim.at(inDays(-6), async () => {
+    const o = await purchasing.createPurchaseOrder({ supplierId: S.oleo.id, lines: [{ productId: P.karite.id, quantity: 3, unit: "kg", unitPrice: 62000 }] });
+    await purchasing.sendPurchaseOrder(o.id);
+    return o;
+  });
+  // ── Producción: bálsamo completado, liberado y despachado
+  const op1 = await sim.at(inDays(-6), async () => {
+    const o = await production.createProductionOrder({ productId: P.balsamo.id, quantity: 100, plannedDate: inDays(-6) });
+    await production.startProductionOrder(o.id);
+    await production.completeProductionOrder({ orderId: o.id, producedQty: 100, consumed: {}, warehouseId: W.PT.id, packSize: 50 });
+    return o;
+  });
+  const lotB = await prisma.lot.findFirstOrThrow({ where: { productionOrderId: op1.id } });
+  await sim.at(inDays(-5), () => inv.releaseLot(lotB.id, "pH 6,2, textura y llenado conformes. Liberado."));
+
+  // Glicerina de corta fecha (vence en 25 días): genera la alerta de vencimiento
+  const gl = await sim.at(new Date(Date.now() - 5 * day), async () => {
+    const o = await purchasing.createPurchaseOrder({ supplierId: S.quimicos.id, lines: [{ productId: P.glicerina.id, quantity: 1, unit: "L", unitPrice: 9500 }], notes: "Lote de corta fecha con descuento" });
+    await purchasing.sendPurchaseOrder(o.id);
+    const line = await prisma.purchaseOrderLine.findFirstOrThrow({ where: { orderId: o.id } });
+    await purchasing.receivePurchaseOrder({ orderId: o.id, supplierRemission: "QE-30117", warehouseId: W.MP.id, lines: [{ lineId: line.id, quantity: 1, lotCode: "GL-0412", expiryDate: inDays(25), containers: 1 }] });
+    return o;
+  });
+  void gl;
+
+  const rem1 = await sim.at(inDays(-4), async () => {
+    const r = await dispatches.createDispatch({
+      customerName: "Tienda Naturista Vida Sana S.A.S.", customerTaxId: "901.555.210-4", address: "Cra. 43A # 7-50, local 102", city: "Medellín",
+      salesRef: "FE-1043", lines: [{ productId: P.balsamo.id, quantity: 50 }],
+    });
+    await dispatches.startPicking(r.id);
+    for (const a of await prisma.dispatchAllocation.findMany({ where: { dispatchId: r.id }, include: { container: true } }))
+      await dispatches.pickScan(r.id, a.container.serial);
+    await dispatches.shipDispatch({ dispatchId: r.id, carrierId: C.inter.id, trackingNumber: "700045218963", eta: inDays(-2), freightCost: 18000 });
+    return r;
+  });
+  const shRem1 = await prisma.shipment.findFirstOrThrow({ where: { dispatchId: rem1.id } });
+  const sh2 = await sim.at(inDays(-4), () => purchasing.addShipment({ purchaseOrderId: oc2.id, carrierId: C.coordinadora.id, trackingNumber: "88001234455", shippedAt: inDays(-4), eta: inDays(-1) }));
+  await sim.at(inDays(-3), () => purchasing.addShipmentEvent(sh2.id, "EN_TRANSITO", "Salió de Cali", inDays(-3)));
+
+  const sh1 = await sim.at(inDays(-3), () => purchasing.addShipment({ purchaseOrderId: oc1.id, carrierId: C.servientrega.id, trackingNumber: "2154879631", shippedAt: inDays(-3), eta: inDays(-1) }));
+  await sim.at(inDays(-2), () => purchasing.addShipmentEvent(sh1.id, "EN_TRANSITO", "En ruta Medellín", inDays(-2)));
+  await sim.at(inDays(-2), () => purchasing.addShipmentEvent(shRem1.id, "ENTREGADO", "Recibió: Marcela Ortiz", inDays(-2)));
+
+
+  // ── Conteo cíclico aprobado con una diferencia (etiquetas de bálsamo)
+  await sim.at(inDays(-2), async () => {
+    const cc = await inv.createCycleCount({ warehouseId: W.EMP.id, productIds: [P.etiquetaBalsamo.id], notes: "Conteo semanal clase A/B" });
+    const labels = await prisma.container.findMany({ where: { productId: P.etiquetaBalsamo.id, warehouseId: W.EMP.id, status: { in: ["SELLADO", "ABIERTO"] } }, orderBy: { serial: "asc" } });
+    for (const [i, c] of labels.entries()) {
+      // El primer rollo tenía el sello roto: se cuenta y faltan 2 etiquetas.
+      if (i === 0) await inv.recordScan({ countId: cc.id, code: c.serial, sealIntact: false, countedQty: Math.max(0, Number(c.currentQty) - 2), comment: "Etiquetas dañadas en la impresora" });
+      else await inv.recordScan({ countId: cc.id, code: c.serial, sealIntact: true });
+    }
+    await inv.closeCycleCount(cc.id);
+    await inv.approveCycleCount(cc.id);
   });
 
-  // ── Compra en tránsito con retraso (alerta): envases
-  const oc2 = await purchasing.createPurchaseOrder({
-    supplierId: S.envases.id, expectedDate: inDays(-1),
-    lines: [
-      { productId: P.frasco.id, quantity: 1, unit: "Caja x200", unitPrice: 240000 },
-      { productId: P.tapa.id, quantity: 1, unit: "Caja x200", unitPrice: 60000 },
-    ],
+  const oc1Line = await prisma.purchaseOrderLine.findFirstOrThrow({ where: { orderId: oc1.id } });
+  await sim.at(inDays(-1), async () => {
+    await purchasing.addShipmentEvent(sh1.id, "ENTREGADO", "Recibido en portería", inDays(-1));
+    await purchasing.receivePurchaseOrder({
+      orderId: oc1.id, supplierRemission: "RM-55821", warehouseId: W.MP.id,
+      lines: [{ lineId: oc1Line.id, quantity: 3, lotCode: "KT-2291", expiryDate: inDays(590), containers: 1 }],
+    });
   });
-  await purchasing.sendPurchaseOrder(oc2.id);
-  const sh2 = await purchasing.addShipment({ purchaseOrderId: oc2.id, carrierId: C.coordinadora.id, trackingNumber: "88001234455", shippedAt: inDays(-4), eta: inDays(-1) });
-  await purchasing.addShipmentEvent(sh2.id, "EN_TRANSITO", "Salió de Cali", inDays(-3));
+
+
+  // ── Producción: jabón completado, lote en CUARENTENA (pendiente de liberación)
+  await sim.at(inDays(-1), async () => {
+    const o = await production.createProductionOrder({ productId: P.jabon.id, quantity: 40, plannedDate: inDays(-1), notes: "Lote para pedido de Tiendas Orgánicas" });
+    await production.startProductionOrder(o.id);
+    await production.completeProductionOrder({ orderId: o.id, producedQty: 39, consumed: {}, warehouseId: W.PT.id, packSize: 20 });
+  });
 
   // ── Compra en borrador
   await purchasing.createPurchaseOrder({ supplierId: S.quimicos.id, lines: [{ productId: P.lavanda.id, quantity: 0.5, unit: "L", unitPrice: 395000 }], notes: "Reposición antes de temporada de regalos" });
-
-  // ── Producción: bálsamo completado, liberado y despachado
-  const op1 = await production.createProductionOrder({ productId: P.balsamo.id, quantity: 100, plannedDate: inDays(-6) });
-  await production.startProductionOrder(op1.id);
-  await production.completeProductionOrder({ orderId: op1.id, producedQty: 100, consumed: {}, warehouseId: W.PT.id, packSize: 50 });
-  const lotB = await prisma.lot.findFirstOrThrow({ where: { productionOrderId: op1.id } });
-  await inv.releaseLot(lotB.id, "pH 6,2, textura y llenado conformes. Liberado.");
-
-  const rem1 = await dispatches.createDispatch({
-    customerName: "Tienda Naturista Vida Sana S.A.S.", customerTaxId: "901.555.210-4", address: "Cra. 43A # 7-50, local 102", city: "Medellín",
-    salesRef: "FE-1043", lines: [{ productId: P.balsamo.id, quantity: 50 }],
-  });
-  await dispatches.startPicking(rem1.id);
-  for (const a of await prisma.dispatchAllocation.findMany({ where: { dispatchId: rem1.id }, include: { container: true } }))
-    await dispatches.pickScan(rem1.id, a.container.serial);
-  await dispatches.shipDispatch({ dispatchId: rem1.id, carrierId: C.inter.id, trackingNumber: "700045218963", eta: inDays(-2), freightCost: 18000 });
-  const shRem1 = await prisma.shipment.findFirstOrThrow({ where: { dispatchId: rem1.id } });
-  await purchasing.addShipmentEvent(shRem1.id, "ENTREGADO", "Recibió: Marcela Ortiz", inDays(-2));
-
-  // ── Producción: jabón completado, lote en CUARENTENA (pendiente de liberación)
-  const op2 = await production.createProductionOrder({ productId: P.jabon.id, quantity: 40, plannedDate: inDays(-1), notes: "Lote para pedido de Tiendas Orgánicas" });
-  await production.startProductionOrder(op2.id);
-  await production.completeProductionOrder({ orderId: op2.id, producedQty: 39, consumed: {}, warehouseId: W.PT.id, packSize: 20 });
 
   // ── Producción: serum en borrador
   await production.createProductionOrder({ productId: P.serum.id, quantity: 50, plannedDate: inDays(3) });
@@ -219,27 +276,6 @@ async function main() {
     customerName: "Farmacia Botánica El Poblado S.A.S.", customerTaxId: "900.888.432-1", address: "Calle 10 # 35-20", city: "Medellín",
     salesRef: "FE-1051", lines: [{ productId: P.crema.id, quantity: 6 }],
   });
-
-  // ── Conteo cíclico aprobado con una diferencia (etiquetas de bálsamo)
-  const cc = await inv.createCycleCount({ warehouseId: W.EMP.id, productIds: [P.etiquetaBalsamo.id], notes: "Conteo semanal clase A/B" });
-  const labels = await prisma.container.findMany({ where: { productId: P.etiquetaBalsamo.id, status: { in: ["SELLADO", "ABIERTO"] } }, orderBy: { serial: "asc" } });
-  for (const [i, c] of labels.entries()) {
-    // El primer rollo tenía el sello roto: se cuenta y faltan 2 etiquetas.
-    if (i === 0) await inv.recordScan({ countId: cc.id, code: c.serial, sealIntact: false, countedQty: Number(c.currentQty) - 2, comment: "Etiquetas dañadas en la impresora" });
-    else await inv.recordScan({ countId: cc.id, code: c.serial, sealIntact: true });
-  }
-  await inv.closeCycleCount(cc.id);
-  await inv.approveCycleCount(cc.id);
-
-  // Historial realista para el Kardex y la gráfica de costo: el inventario inicial se cargó hace 45 días
-  // y la compra de karité llegó ayer (todo lo demás ocurrió en los últimos días).
-  const ago = (days: number) => new Date(Date.now() - days * day);
-  await prisma.stockMovement.updateMany({ where: { type: "INV_INICIAL" }, data: { createdAt: ago(45) } });
-  await prisma.container.updateMany({ where: { sourceType: "AJUSTE" }, data: { createdAt: ago(45) } });
-  await prisma.lot.updateMany({ where: { sourceType: "AJUSTE" }, data: { createdAt: ago(45) } });
-  await prisma.adjustment.updateMany({ where: { reason: "INVENTARIO_INICIAL" }, data: { createdAt: ago(45) } });
-  await prisma.stockMovement.updateMany({ where: { documentType: "OC", documentId: oc1.id }, data: { createdAt: ago(1) } });
-  await prisma.purchaseOrder.update({ where: { id: oc1.id }, data: { createdAt: ago(6), sentAt: ago(6) } });
 
   console.log("Datos de ejemplo de Botánica Viva creados.");
 }

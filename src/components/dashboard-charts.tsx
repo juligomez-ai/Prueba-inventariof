@@ -75,7 +75,9 @@ export function InventoryValueChart({ labels, current, previous, weekly }: { lab
   const [ref, W] = useWidth();
   const [hover, setHover] = useState<number | null>(null);
   const H = 240, L = 64, R = 16, T = 12, B = 28;
-  const all = [...current, ...previous];
+  // Si el período anterior es anterior a la implementación (todo en cero) no se dibuja
+  const hasPrev = previous.some((v) => v > 0);
+  const all = hasPrev ? [...current, ...previous] : current;
   const ticks = niceTicks(Math.max(...all, 1), Math.min(...all.filter((v) => v > 0), 0) * 0.9);
   const lo = ticks[0], hi = ticks[ticks.length - 1];
   const x = (i: number) => L + (labels.length <= 1 ? 0 : (i / (labels.length - 1)) * (W - L - R));
@@ -85,7 +87,7 @@ export function InventoryValueChart({ labels, current, previous, weekly }: { lab
 
   return (
     <div className="space-y-3">
-      <Legend items={[{ label: "Período actual", color: CHART.primary }, { label: "Período anterior", color: CHART.previous, dashed: true }]} />
+      <Legend items={hasPrev ? [{ label: "Período actual", color: CHART.primary }, { label: "Período anterior", color: CHART.previous, dashed: true }] : [{ label: "Período actual (sin datos del período anterior: es previo a la implementación)", color: CHART.primary }]} />
       <div ref={ref} className="relative" onMouseLeave={() => setHover(null)}>
         <svg width={W} height={H} role="img" aria-label="Valor del inventario en el tiempo"
           onMouseMove={(e) => {
@@ -102,12 +104,12 @@ export function InventoryValueChart({ labels, current, previous, weekly }: { lab
           {labels.map((l, i) => shown.has(i) && (
             <text key={l} x={x(i)} y={H - 8} textAnchor={anchor(i, labels.length)} fontSize={11} fill="#6B6B6B">{dayLabel(l)}</text>
           ))}
-          <path d={path(previous)} fill="none" stroke={CHART.previous} strokeWidth={2} strokeDasharray="5 4" strokeLinejoin="round" />
+          {hasPrev && <path d={path(previous)} fill="none" stroke={CHART.previous} strokeWidth={2} strokeDasharray="5 4" strokeLinejoin="round" />}
           <path d={path(current)} fill="none" stroke={CHART.primary} strokeWidth={2} strokeLinejoin="round" />
           {hover !== null && (
             <>
               <line x1={x(hover)} x2={x(hover)} y1={T} y2={H - B} stroke="#9CA3AF" strokeDasharray="3 3" />
-              <circle cx={x(hover)} cy={y(previous[hover])} r={4} fill={CHART.previous} stroke="#fff" strokeWidth={2} />
+              {hasPrev && <circle cx={x(hover)} cy={y(previous[hover])} r={4} fill={CHART.previous} stroke="#fff" strokeWidth={2} />}
               <circle cx={x(hover)} cy={y(current[hover])} r={5} fill={CHART.primary} stroke="#fff" strokeWidth={2} />
             </>
           )}
@@ -118,7 +120,7 @@ export function InventoryValueChart({ labels, current, previous, weekly }: { lab
           <Tooltip x={x(hover)} width={W}>
             <div className="mb-1 font-medium">{weekly ? "Semana del " : ""}{dayLabel(labels[hover])}</div>
             <div className="flex justify-between gap-4"><span className="text-muted">Actual</span><b className="tabular">{fmtMoney(current[hover])}</b></div>
-            <div className="flex justify-between gap-4"><span className="text-muted">Período anterior</span><span className="tabular">{fmtMoney(previous[hover])}</span></div>
+            {hasPrev && <div className="flex justify-between gap-4"><span className="text-muted">Período anterior</span><span className="tabular">{fmtMoney(previous[hover])}</span></div>}
           </Tooltip>
         )}
       </div>

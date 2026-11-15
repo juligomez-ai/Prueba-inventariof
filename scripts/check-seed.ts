@@ -1,4 +1,4 @@
-/** Verifica los datos de ejemplo contra los números del README y el invariante Kardex = bultos. */
+/** Resume los datos de ejemplo y verifica el invariante Kardex = bultos (saldo del último movimiento = suma de bultos). */
 import { checkFeasibility, recipeCost } from "@/application/use-cases/production";
 import { prisma } from "@/infrastructure/database/prisma";
 import { productBalance, stockSummary } from "@/infrastructure/database/stock";
