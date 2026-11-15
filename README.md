@@ -112,7 +112,7 @@ El reto permite asumir características del negocio si se hacen explícitas. Est
 | S7 | El módulo de **ventas/facturación ya existe** en SYNTHEX; este módulo **consume** sus ventas (para el histórico) y **despacha** sus pedidos | El reto indica integrarse a lo existente, no reemplazarlo |
 | S8 | **Costeo directo de materiales**: el costo de producción es la suma de insumos y empaques consumidos. Mano de obra y costos indirectos (CIF) quedan para una fase posterior | Mantiene el MVP explicable sin perder lo esencial |
 | S9 | En el MVP hay **un solo usuario administrador**; los roles llegan en Fase 3 | Reduce complejidad del demo |
-| S10 | Las transportadoras se registran a mano (nombre + número de guía); **no hay integración con APIs** de transportadoras en el MVP | Las integraciones dependen de convenios comerciales |
+| S10 | En el MVP el estado del envío se actualiza **a mano**. Cada transportadora tiene una **plantilla de URL de rastreo** y, al hacer clic en la guía, se abre la página oficial con la guía cargada; si la transportadora no acepta la guía en la URL, se abre su página de rastreo y la guía se copia al portapapeles. La **sincronización automática** del estado real (ej. pasar solo a "Entregado") queda para la **Fase 2** | La sincronización exige integraciones oficiales (contrato y credenciales) o un servicio que agrupe transportadoras. Descartamos el *scraping* por frágil (cambios en la página, CAPTCHA, bloqueos desde la nube) y por los términos de uso de los sitios |
 | S11 | La empresa ficticia "Botánica Viva" y todas sus cifras son **datos de ejemplo** | Escenario ficticio del reto |
 
 ---
@@ -348,7 +348,8 @@ Convenciones: **RF** = requerimiento funcional · **RN** = regla de negocio · *
 |---|---|
 | RF-7.1 | Asociar a la OC uno o varios envíos: transportadora, número de guía, fecha de despacho, fecha estimada de llegada (ETA) |
 | RF-7.2 | Línea de tiempo de eventos: creado → despachado por proveedor → en tránsito → en ciudad destino → entregado / novedad |
-| RF-7.3 | Registro manual de eventos con fecha y nota (S10). Enlace al rastreo web de la transportadora si existe |
+| RF-7.3 | Registro manual de eventos con fecha y nota (S10) |
+| RF-7.3b | Catálogo de transportadoras con **plantilla de URL de rastreo** (`https://…?guia={guia}`). Clic en la guía → abre la página oficial en pestaña nueva con la guía cargada; si no se admite parámetro, abre la página y copia la guía al portapapeles |
 | RF-7.4 | Tablero "Por llegar": envíos abiertos ordenados por ETA, con indicador de retraso |
 | RF-7.5 | Alerta de retraso: ETA vencida sin recepción; alerta de impacto si una OP planificada depende de ese insumo |
 | RN-7.1 | Marcar "entregado" **no** suma stock; el stock solo entra con la recepción (M6), que valida cantidades y lotes |
@@ -456,7 +457,7 @@ flowchart LR
 | RF-12.3 | Estados: `PENDING` → `PICKING` → `SHIPPED` → `IN_TRANSIT` → `DELIVERED` / `INCIDENT` / `RETURNED` |
 | RF-12.4 | Datos de envío: transportadora, número de guía, costo del flete, fecha de despacho, ETA |
 | RF-12.5 | Al pasar a `SHIPPED`: genera `OUT_SALE` por lote, valorizado al costo promedio |
-| RF-12.6 | Línea de tiempo de eventos de tracking (manual en MVP) y enlace de rastreo |
+| RF-12.6 | Línea de tiempo de eventos de tracking (manual en MVP) y enlace a la página oficial de rastreo (RF-7.3b) |
 | RF-12.7 | Tablero de despachos: pendientes, en tránsito, con novedad, entregados |
 | RN-12.1 | No se despachan lotes vencidos, en cuarentena ni con vencimiento menor a X días (configurable, por defecto 90) |
 | CA-12.1 | El despacho DSP-0003 de 24 cremas descuenta del lote más próximo a vencer y la trazabilidad del lote muestra al cliente |
@@ -780,6 +781,7 @@ Catálogo, bodegas y traslados, existencias y Kardex, costo promedio ponderado y
 
 ### 🔜 Fase 2
 - **Planeación con pronóstico IA, punto de reorden, cobertura y explosión de necesidades (M16).**
+- **Sincronización automática del tracking** (entrante y saliente): un componente que consulta periódicamente el estado real de cada guía abierta (o recibe notificaciones de la transportadora) y actualiza el tablero solo (ej. "Entregado"), con alertas de novedad. Se diseña con un conector por transportadora y una fuente intercambiable: integración oficial de cada transportadora o un servicio que agrupe varias. Requiere convenios y credenciales. El estado manual queda como respaldo.
 - Cuarentena y liberación por control de calidad para producto terminado.
 - Costo en destino (fletes y aranceles distribuidos sobre la compra).
 - Mano de obra y CIF en el costo de producción.
@@ -789,7 +791,6 @@ Catálogo, bodegas y traslados, existencias y Kardex, costo promedio ponderado y
 
 ### 🔭 Fase 3
 - Roles, permisos y auditoría (M17).
-- Integraciones con APIs de transportadoras para tracking automático.
 - Notificaciones por correo y WhatsApp.
 - App móvil offline para bodega.
 - Planificación por capacidad (equipos y turnos).
