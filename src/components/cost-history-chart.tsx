@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { fmtDate, fmtMoney } from "@/shared/numbers";
 
 export interface CostPoint {
@@ -15,9 +15,22 @@ export interface CostPoint {
  * Línea escalonada: el costo cambia solo con las entradas con costo y se mantiene entre ellas.
  * Una sola serie (sin leyenda: el título la nombra), marcadores en cada cambio y tooltip al pasar el cursor.
  */
-export function CostHistoryChart({ points, unit, now: nowIso }: { points: CostPoint[]; unit: string; now: string }) {
+export function CostHistoryChart({ points: raw, unit, now: nowIso }: { points: CostPoint[]; unit: string; now: string }) {
   const [hover, setHover] = useState<number | null>(null);
-  const W = 640, H = 200, L = 72, R = 16, T = 16, B = 28;
+  // Ancho real del contenedor: el texto se ve a su tamaño en cualquier pantalla
+  const box = useRef<HTMLDivElement>(null);
+  const [W, setW] = useState(640);
+  useEffect(() => {
+    if (!box.current) return;
+    const ro = new ResizeObserver(([e]) => setW(Math.max(280, Math.floor(e.contentRect.width))));
+    ro.observe(box.current);
+    return () => ro.disconnect();
+  }, []);
+  const H = 220, L = 72, R = 16, T = 16, B = 28;
+  // Un punto por día (el último costo del día), para no apilar marcadores
+  const byDay = new Map<string, CostPoint>();
+  for (const pt of raw) byDay.set(pt.at.slice(0, 10), pt);
+  const points = [...byDay.values()];
   const color = "#00A08E"; // turquesa validado: luminosidad, croma y contraste vs superficie
 
   if (points.length < 2)
@@ -43,8 +56,8 @@ export function CostHistoryChart({ points, unit, now: nowIso }: { points: CostPo
   const h = hover !== null ? points[hover] : null;
 
   return (
-    <div className="relative px-5 pb-4 pt-2">
-      <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full" role="img" aria-label="Historial del costo promedio" onMouseLeave={() => setHover(null)}>
+    <div ref={box} className="relative mx-5 mb-4 mt-2">
+      <svg width={W} height={H} role="img" aria-label="Historial del costo promedio" onMouseLeave={() => setHover(null)}>
         {ticks.map((v, i) => (
           <g key={i}>
             <line x1={L} x2={W - R} y1={y(v)} y2={y(v)} stroke="currentColor" className="text-border" strokeWidth={1} />
