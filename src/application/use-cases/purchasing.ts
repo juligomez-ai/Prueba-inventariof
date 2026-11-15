@@ -177,7 +177,7 @@ export async function addShipment(input: {
         shippedAt: input.shippedAt,
         eta: input.eta,
         status,
-        events: { create: { status, note: "Envío registrado", userName: CURRENT_USER } },
+        events: { create: { status, note: "Envío registrado", userName: CURRENT_USER, occurredAt: input.shippedAt ?? new Date() } },
       },
     });
     if (input.purchaseOrderId) {
