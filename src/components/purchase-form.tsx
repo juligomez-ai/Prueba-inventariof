@@ -73,6 +73,7 @@ export function PurchaseForm({
                       const next = factorOf(p, e.target.value);
                       set(i, { unit: e.target.value, unitPrice: l.unitPrice ? String(Math.round((Number(l.unitPrice) / prev) * next)) : "" });
                     }}>
+                      {units.length === 0 && <option value="">Elige el producto</option>}
                       {units.map((u) => <option key={u} value={u}>{u}{u !== p?.baseUnit ? ` (= ${factorOf(p, u)} ${p?.baseUnit})` : ""}</option>)}
                     </Select>
                   </Td>

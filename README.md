@@ -952,6 +952,14 @@ npm run db:reset
 
 `npm test` corre las pruebas de reglas de negocio, `npm run check:seed` verifica que los números cuadren con este README y que el Kardex cuadre con los bultos, y `npm run db:reset` borra todo y vuelve a cargar los datos de ejemplo (solo para desarrollo).
 
+### QA de punta a punta
+
+En `e2e/` hay dos scripts de Playwright:
+- **`rastreo.js`** visita todas las pantallas por sus enlaces y revisa estado HTTP, errores de consola, listas desplegables vacías y textos inválidos.
+- **`qa-modulos.js`** ejecuta, módulo por módulo, cada botón, filtro y lista: más de 100 verificaciones, entre ellas crear, editar, validar, escanear, recibir, producir, liberar, despachar, contar y generar los PDF.
+
+Se corren con la app encendida y los datos recién cargados (`npm run db:reset`).
+
 ### Despliegue en Vercel + Supabase
 
 1. En Supabase, en el botón **Connect** del proyecto, copia las cadenas *Transaction pooler* (puerto 6543) y *Session pooler* (puerto 5432). En las dos, reemplaza `[YOUR-PASSWORD]` por la contraseña de la base de datos.

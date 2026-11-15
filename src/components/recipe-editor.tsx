@@ -69,7 +69,7 @@ export function RecipeEditor({
                   <Td><Input name="item.quantity" type="number" step="any" value={r.quantity} onChange={(e) => update(i, { quantity: e.target.value })} required /></Td>
                   <Td>
                     <Select name="item.unit" value={r.unit || ing?.baseUnit || ""} onChange={(e) => update(i, { unit: e.target.value })}>
-                      {(ing ? unitsFor(ing.baseUnit) : [""]).map((u) => <option key={u} value={u}>{u}</option>)}
+                      {(ing ? unitsFor(ing.baseUnit) : [""]).map((u) => <option key={u} value={u}>{u || "—"}</option>)}
                     </Select>
                   </Td>
                   <Td className="text-right tabular text-xs">{ing ? `${fmtMoney(ing.avgCost)}/${ing.baseUnit}` : ""}</Td>

@@ -28,12 +28,13 @@ export function Scanner({
   const lastRef = useRef<{ code: string; at: number }>({ code: "", at: 0 });
 
   const emit = useCallback(
-    async (raw: string) => {
+    async (raw: string, fromCamera = false) => {
       const code = raw.trim();
       if (!code) return;
-      // Evita lecturas duplicadas de la cámara del mismo código en menos de 2 s
+      // La cámara lee la misma etiqueta muchas veces por segundo: se descartan repeticiones de menos de 2 s.
+      // La pistola y el teclado sí pueden repetir el código a propósito.
       const now = Date.now();
-      if (lastRef.current.code === code && now - lastRef.current.at < 2000) return;
+      if (fromCamera && lastRef.current.code === code && now - lastRef.current.at < 2000) return;
       lastRef.current = { code, at: now };
       try {
         navigator.vibrate?.(60);
@@ -56,7 +57,7 @@ export function Scanner({
           { video: { facingMode: "environment" } },
           videoRef.current!,
           (result) => {
-            if (result) void emit(result.getText());
+            if (result) void emit(result.getText(), true);
           },
         );
         if (cancelled) controls.stop();

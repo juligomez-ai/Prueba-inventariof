@@ -2,6 +2,7 @@
 
 import type { EstadoEnvio, MotivoAjuste, TipoBodega, TipoProducto } from "@prisma/client";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import * as catalog from "@/application/use-cases/catalog";
 import * as dispatches from "@/application/use-cases/dispatches";
 import * as inv from "@/application/use-cases/inventory";
@@ -392,17 +393,22 @@ export async function createDispatchAction(_: ActionResult | null, fd: FormData)
 }
 
 export async function dispatchTransitionAction(_: ActionResult | null, fd: FormData) {
-  return run(async () => {
+  let deleted = false;
+  const result = await run(async () => {
     const id = str(fd, "id");
     const op = str(fd, "op");
     if (op === "pick") await dispatches.startPicking(id);
     else if (op === "unpick") await dispatches.cancelPicking(id);
     else if (op === "delete") {
       await dispatches.cancelDispatch(id);
-      return { message: "Despacho eliminado.", redirect: "/despachos" };
+      deleted = true;
+      return { message: "Despacho eliminado." };
     }
     return { message: op === "pick" ? "Bultos asignados con FEFO. Verifica cada caja con el escáner." : "Alistamiento cancelado." };
   });
+  // La página del despacho eliminado ya no existe: se redirige desde el servidor.
+  if (deleted) redirect("/despachos");
+  return result;
 }
 
 export async function pickScanAction(dispatchId: string, code: string) {
