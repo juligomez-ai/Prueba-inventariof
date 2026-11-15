@@ -1,4 +1,5 @@
 import { abcFrequencyDays, classifyAbc, type AbcClass } from "@/domain/services/abc";
+import { countAccuracyByValue, productionVariance } from "@/domain/services/kpis";
 import { prisma } from "@/infrastructure/database/prisma";
 import { startOfToday, stockSummary } from "@/infrastructure/database/stock";
 import { daysBetween, n, round2 } from "@/shared/numbers";
@@ -62,32 +63,52 @@ export async function alerts(): Promise<AlertItem[]> {
 
 const fmt = (v: number) => new Intl.NumberFormat("es-CO", { maximumFractionDigits: 3 }).format(v);
 
-/** KPIs del tablero (RF-15.1). */
+/** KPIs del tablero (RF-15.1): responden las preguntas diarias del negocio. */
 export async function dashboard() {
   const rows = await inventoryRows();
   const byType = { MATERIA_PRIMA: 0, EMPAQUE: 0, PRODUCTO_TERMINADO: 0 };
   for (const r of rows) byType[r.product.type] += r.value;
-  const monthStart = new Date();
-  monthStart.setDate(1);
-  monthStart.setHours(0, 0, 0, 0);
-  const [inProgress, drafts, completed, lastCount] = await Promise.all([
+  const today = startOfToday();
+  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+  const in30 = new Date(today.getTime() + 30 * 86_400_000);
+  const ago30 = new Date(today.getTime() - 30 * 86_400_000);
+
+  const [inProgress, completed, losses, expiring, toRelease, toDispatch, countLines] = await Promise.all([
     prisma.productionOrder.count({ where: { status: "EN_PROCESO" } }),
-    prisma.productionOrder.count({ where: { status: "BORRADOR" } }),
     prisma.productionOrder.findMany({ where: { status: "COMPLETADA", completedAt: { gte: monthStart } } }),
-    prisma.cycleCount.findFirst({ where: { status: "APROBADO" }, orderBy: { approvedAt: "desc" }, include: { lines: true } }),
+    prisma.stockMovement.findMany({ where: { type: { in: ["BAJA", "AJUSTE_SAL"] }, createdAt: { gte: monthStart } } }),
+    prisma.lot.findMany({
+      where: { expiryDate: { lte: in30 }, status: { not: "BLOQUEADO" }, containers: { some: { status: { in: ["SELLADO", "ABIERTO"] } } } },
+      include: { product: true, containers: { where: { status: { in: ["SELLADO", "ABIERTO"] } } } },
+    }),
+    prisma.lot.findMany({ where: { status: "CUARENTENA", containers: { some: { status: { in: ["SELLADO", "ABIERTO"] } } } }, orderBy: { createdAt: "asc" } }),
+    prisma.dispatch.groupBy({ by: ["status"], where: { status: { in: ["PENDIENTE", "EN_ALISTAMIENTO", "DESPACHADO", "EN_TRANSITO", "NOVEDAD"] } }, _count: true }),
+    prisma.cycleCountLine.findMany({ where: { count: { status: "APROBADO", approvedAt: { gte: ago30 } } }, include: { product: true } }),
   ]);
-  let accuracy: number | null = null;
-  if (lastCount && lastCount.lines.length) {
-    const exact = lastCount.lines.filter((l) => Math.abs(n(l.countedQty) - n(l.systemQty)) < 1e-9).length;
-    accuracy = round2((exact / lastCount.lines.length) * 100);
-  }
+
+  const production = productionVariance(
+    completed.map((o) => ({ plannedQty: n(o.plannedQty), producedQty: n(o.producedQty), theoreticalCost: n(o.theoreticalCost), actualCost: n(o.actualCost) })),
+  );
+  const supplies = rows.filter((r) => r.product.type !== "PRODUCTO_TERMINADO" && n(r.product.minStock) > 0 && r.available <= n(r.product.minStock));
+  const dispatchCount = (s: string[]) => toDispatch.filter((d) => s.includes(d.status)).reduce((a, d) => a + d._count, 0);
+
   return {
     value: { ...byType, total: round2(byType.MATERIA_PRIMA + byType.EMPAQUE + byType.PRODUCTO_TERMINADO) },
-    inProgress,
-    drafts,
-    producedUnits: completed.reduce((s, o) => s + n(o.producedQty), 0),
-    producedCost: round2(completed.reduce((s, o) => s + n(o.actualCost), 0)),
-    lastCount: lastCount ? { code: lastCount.code, id: lastCount.id, accuracy } : null,
+    production: { orders: completed.length, inProgress, actual: round2(production.actual), variance: round2(production.variance), variancePct: round2(production.variancePct) },
+    losses: { value: round2(-losses.reduce((s, m) => s + n(m.totalValue), 0)), movements: losses.length },
+    supplies: { count: supplies.length, critical: supplies.filter((r) => r.available <= n(r.product.safetyStock)).length, inTransit: supplies.filter((r) => r.inTransit > 0).length },
+    expiring: {
+      count: expiring.length,
+      expired: expiring.filter((l) => l.expiryDate! < today).length,
+      value: round2(expiring.reduce((s, l) => s + l.containers.reduce((a, c) => a + n(c.currentQty), 0) * n(l.product.avgCost), 0)),
+    },
+    toRelease: { count: toRelease.length, oldestDays: toRelease[0] ? daysBetween(toRelease[0].createdAt, new Date()) : 0 },
+    toDispatch: { pending: dispatchCount(["PENDIENTE", "EN_ALISTAMIENTO"]), onTheWay: dispatchCount(["DESPACHADO", "EN_TRANSITO"]), incidents: dispatchCount(["NOVEDAD"]) },
+    accuracy: {
+      value: countAccuracyByValue(countLines.map((l) => ({ systemQty: n(l.systemQty), countedQty: n(l.countedQty), unitCost: n(l.product.avgCost) }))),
+      lines: countLines.length,
+      counts: new Set(countLines.map((l) => l.countId)).size,
+    },
   };
 }
 

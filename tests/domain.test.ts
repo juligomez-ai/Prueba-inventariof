@@ -80,3 +80,19 @@ describe("bultos por recepción", () => {
   it("75 kg en 3 sacos", () => expect(splitIntoCount(75, 3)).toEqual([25, 25, 25]));
   it("10 en 3 bultos suma exacto", () => expect(splitIntoCount(10, 3).reduce((a, b) => a + b, 0)).toBeCloseTo(10, 6));
 });
+
+import { countAccuracyByValue, productionVariance } from "@/domain/services/kpis";
+describe("indicadores del tablero", () => {
+  it("exactitud por valor: faltan 2 etiquetas de $120 sobre 200", () => {
+    const a = countAccuracyByValue([
+      { systemQty: 100, countedQty: 98, unitCost: 120 },
+      { systemQty: 100, countedQty: 100, unitCost: 120 },
+    ]);
+    expect(a).toBeCloseTo(99, 6);
+  });
+  it("sin conteos no hay exactitud", () => expect(countAccuracyByValue([])).toBeNull());
+  it("variación: 39 jabones de 40 planeados con el mismo costo total", () => {
+    const v = productionVariance([{ plannedQty: 40, producedQty: 39, theoreticalCost: 4000, actualCost: 4000 }]);
+    expect(v.variance).toBeCloseTo(100);
+  });
+});

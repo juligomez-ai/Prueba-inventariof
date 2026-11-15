@@ -1,9 +1,10 @@
 import { AlertTriangle, ArrowRight, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { alerts, dashboard } from "@/application/use-cases/insights";
+import type { ReactNode } from "react";
 import { Badge, ButtonLink, Card, CardBody, CardHeader, Empty, PageHeader, Stat } from "@/components/ui";
 import { prisma } from "@/infrastructure/database/prisma";
-import { fmtDate, fmtMoney, fmtPct, fmtQty } from "@/shared/numbers";
+import { fmtDate, fmtMoney, fmtPct } from "@/shared/numbers";
 
 export default async function Dashboard() {
   const [k, al, shipments, setup] = await Promise.all([
@@ -37,20 +38,33 @@ export default async function Dashboard() {
           </>
         }
       />
+      <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted">Dinero</h2>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="Valor del inventario" value={fmtMoney(k.value.total)} sub="Costo promedio ponderado" />
-        <Stat label="Materias primas" value={fmtMoney(k.value.MATERIA_PRIMA)} />
-        <Stat label="Empaques" value={fmtMoney(k.value.EMPAQUE)} />
-        <Stat label="Producto terminado" value={fmtMoney(k.value.PRODUCTO_TERMINADO)} />
-        <Stat label="Órdenes en proceso" value={k.inProgress} sub={`${k.drafts} en borrador`} />
-        <Stat label="Producido este mes" value={fmtQty(k.producedUnits, "und")} sub={`Costo real ${fmtMoney(k.producedCost)}`} />
-        <Stat
-          label="Exactitud último conteo"
-          value={k.lastCount?.accuracy !== null && k.lastCount ? fmtPct(k.lastCount.accuracy!) : "—"}
-          sub={k.lastCount ? <Link className="text-primary hover:underline" href={`/conteos/${k.lastCount.id}`}>{k.lastCount.code}</Link> : "Sin conteos aprobados"}
-          tone={k.lastCount?.accuracy !== null && k.lastCount && k.lastCount.accuracy! < 95 ? "yellow" : undefined}
-        />
-        <Stat label="Alertas" value={al.length} tone={al.some((a) => a.tone === "red") ? "red" : al.length ? "yellow" : "green"} sub={`${al.filter((a) => a.tone === "red").length} críticas`} />
+        <Kpi href="/existencias" label="Valor del inventario" value={fmtMoney(k.value.total)}
+          sub={`MP ${fmtMoney(k.value.MATERIA_PRIMA)} · Empaques ${fmtMoney(k.value.EMPAQUE)} · Terminado ${fmtMoney(k.value.PRODUCTO_TERMINADO)}`} />
+        <Kpi href="/produccion" label="Costo de producción del mes" value={fmtMoney(k.production.actual)}
+          sub={k.production.orders === 0 ? `Sin órdenes completadas · ${k.production.inProgress} en proceso` : `${k.production.orders} orden(es) · ${k.production.variance === 0 ? "igual a la fórmula" : `${k.production.variance > 0 ? "+" : "−"}${fmtMoney(Math.abs(k.production.variance))} (${fmtPct(Math.abs(k.production.variancePct))}) vs fórmula`} · ${k.production.inProgress} en proceso`}
+          tone={k.production.variancePct > 2 ? "yellow" : undefined} />
+        <Kpi href="/ajustes" label="Pérdidas del mes" value={fmtMoney(k.losses.value)}
+          sub={`${k.losses.movements} baja(s) y ajuste(s) negativos`} tone={k.losses.value > 0 ? "red" : "green"} />
+        <Kpi href="/conteos" label="Exactitud del inventario" value={k.accuracy.value === null ? "—" : fmtPct(k.accuracy.value)}
+          sub={k.accuracy.value === null ? "Sin conteos aprobados en 30 días" : `Por valor · ${k.accuracy.lines} bultos en ${k.accuracy.counts} conteo(s), últimos 30 días`}
+          tone={k.accuracy.value === null ? undefined : k.accuracy.value >= 95 ? "green" : "yellow"} />
+      </div>
+      <h2 className="mb-2 mt-5 text-xs font-semibold uppercase tracking-wider text-muted">Operación</h2>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Kpi href="/existencias" label="Insumos bajo mínimo" value={k.supplies.count}
+          sub={k.supplies.count ? `${k.supplies.critical} crítico(s) · ${k.supplies.inTransit} ya en camino` : "Todo sobre el mínimo"}
+          tone={k.supplies.critical ? "red" : k.supplies.count ? "yellow" : "green"} />
+        <Kpi href="/lotes" label="Lotes por vencer (30 días)" value={k.expiring.count}
+          sub={k.expiring.count ? `${fmtMoney(k.expiring.value)} en riesgo${k.expiring.expired ? ` · ${k.expiring.expired} ya vencido(s)` : ""}` : "Nada vence pronto"}
+          tone={k.expiring.expired ? "red" : k.expiring.count ? "yellow" : "green"} />
+        <Kpi href="/calidad" label="Por liberar" value={k.toRelease.count}
+          sub={k.toRelease.count ? `Lotes en cuarentena · el más antiguo lleva ${k.toRelease.oldestDays} día(s)` : "Sin lotes en cuarentena"}
+          tone={k.toRelease.count ? "yellow" : "green"} />
+        <Kpi href="/despachos" label="Por despachar" value={k.toDispatch.pending}
+          sub={`${k.toDispatch.onTheWay} en camino${k.toDispatch.incidents ? ` · ${k.toDispatch.incidents} con novedad` : ""}`}
+          tone={k.toDispatch.incidents ? "red" : undefined} />
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-3">
@@ -109,5 +123,13 @@ export default async function Dashboard() {
         </div>
       </div>
     </>
+  );
+}
+
+function Kpi({ href, ...p }: { href: string; label: string; value: ReactNode; sub?: ReactNode; tone?: "red" | "yellow" | "green" }) {
+  return (
+    <Link href={href} className="block rounded-xl transition hover:ring-2 hover:ring-primary/20">
+      <Stat {...p} />
+    </Link>
   );
 }
