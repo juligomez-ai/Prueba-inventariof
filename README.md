@@ -563,7 +563,9 @@ Detalle completo en la [sección 10](#10-copiloto-ia).
 
 | ID | Requerimiento | Fase |
 |---|---|---|
-| RF-15.1 | KPIs: valor del inventario (MP, empaque, PT), OPs en proceso, producción del mes (unidades y costo), exactitud del último conteo | 1 |
+| RF-15.1 | Indicadores agrupados en **Dinero** (valor del inventario con desglose, costo de producción con variación vs fórmula, pérdidas, exactitud de conteos por valor) y **Operación de hoy** (insumos bajo mínimo, lotes por vencer en 30 días, por liberar, por despachar). Cada tarjeta lleva a su pantalla | 1 |
+| RF-15.1b | **Selector de período** (últimos 30 días, 3 meses, 6 meses) con variación de cada indicador contra el período anterior de igual duración (↑/↓ en verde o rojo según si subir es bueno o malo) | 1 |
+| RF-15.1c | **Gráficas:** valor del inventario en el tiempo (período actual vs anterior, línea punteada) y entradas vs salidas en pesos por día o semana, con tooltip al pasar el cursor | 1 |
 | RF-15.2 | Alertas: stock bajo mínimo, lotes por vencer, lotes pendientes de liberación, envíos entrantes retrasados, despachos con novedad | 1 |
 | RF-15.3 | Rotación de inventario y días de inventario | 2 |
 | RF-15.4 | Notificaciones por correo/WhatsApp | 3 |
@@ -798,7 +800,7 @@ erDiagram
 | Capa | Tecnología |
 |---|---|
 | Fullstack | Next.js 16 (App Router, Server Actions) + TypeScript + React 19 |
-| UI | Tailwind CSS 4 con componentes propios al estilo shadcn/ui · íconos lucide-react |
+| UI | Tailwind CSS 4 con componentes propios al estilo shadcn/ui · íconos lucide-react · paleta turquesa (`#00B19D` acentos, `#007F72` botones con contraste 4,9:1, texto `#333333`) · gráficas SVG propias con colores validados para daltonismo |
 | Datos | Prisma 6 + PostgreSQL (Supabase en el despliegue; Postgres local en desarrollo) |
 | IA | Google Gemini con `@google/genai` (function calling) |
 | Escáner | Cámara del navegador con ZXing (`@zxing/browser`) + pistola USB/Bluetooth en modo teclado |

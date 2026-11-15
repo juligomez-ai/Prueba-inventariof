@@ -1,14 +1,21 @@
 @import "tailwindcss";
 
+/*
+ * Paleta: turquesa como color principal, gris oscuro para el texto y fondos blancos / grises claros.
+ * --brand (#00B19D) es el turquesa de marca para logo, íconos y acentos.
+ * --primary (#007F72) es el mismo tono más oscuro para botones y enlaces: con texto blanco
+ * llega a 4,9:1 de contraste (el turquesa claro con blanco solo llega a 2,7:1).
+ */
 :root {
-  --background: #f7f5f2;
-  --foreground: #23201c;
+  --background: #f5f7f8;
+  --foreground: #333333;
   --card: #ffffff;
-  --muted: #6f6a63;
-  --border: #e6e1da;
-  --primary: #5b6f4e;
+  --muted: #6b6b6b;
+  --border: #e5e8eb;
+  --brand: #00b19d;
+  --primary: #007f72;
   --primary-foreground: #ffffff;
-  --accent: #f0ede6;
+  --accent: #e6f7f5;
 }
 
 @theme inline {
@@ -17,6 +24,7 @@
   --color-card: var(--card);
   --color-muted: var(--muted);
   --color-border: var(--border);
+  --color-brand: var(--brand);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
   --color-accent: var(--accent);

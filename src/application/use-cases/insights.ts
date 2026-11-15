@@ -1,5 +1,6 @@
 import { abcFrequencyDays, classifyAbc, type AbcClass } from "@/domain/services/abc";
 import { countAccuracyByValue, productionVariance } from "@/domain/services/kpis";
+import { buckets, flowSeries, inventoryValueSeries, pctChange, type ValuedMove } from "@/domain/services/series";
 import { prisma } from "@/infrastructure/database/prisma";
 import { startOfToday, stockSummary } from "@/infrastructure/database/stock";
 import { daysBetween, n, round2 } from "@/shared/numbers";
@@ -63,39 +64,82 @@ export async function alerts(): Promise<AlertItem[]> {
 
 const fmt = (v: number) => new Intl.NumberFormat("es-CO", { maximumFractionDigits: 3 }).format(v);
 
-/** KPIs del tablero (RF-15.1): responden las preguntas diarias del negocio. */
-export async function dashboard() {
+/**
+ * KPIs del tablero (RF-15.1) para un período (30, 90 o 180 días), con la variación
+ * contra el período anterior de igual duración y las series para las gráficas.
+ */
+export async function dashboard(periodDays = 30) {
   const rows = await inventoryRows();
   const byType = { MATERIA_PRIMA: 0, EMPAQUE: 0, PRODUCTO_TERMINADO: 0 };
   for (const r of rows) byType[r.product.type] += r.value;
   const today = startOfToday();
-  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+  const now = new Date();
+  const end = new Date(today.getTime() + 86_400_000); // fin de hoy (exclusivo)
+  const from = new Date(end.getTime() - periodDays * 86_400_000);
+  const prevFrom = new Date(from.getTime() - periodDays * 86_400_000);
   const in30 = new Date(today.getTime() + 30 * 86_400_000);
-  const ago30 = new Date(today.getTime() - 30 * 86_400_000);
 
-  const [inProgress, completed, losses, expiring, toRelease, toDispatch, countLines] = await Promise.all([
+  const [inProgress, completedAll, lossesAll, expiring, toRelease, toDispatch, countLinesAll, moves] = await Promise.all([
     prisma.productionOrder.count({ where: { status: "EN_PROCESO" } }),
-    prisma.productionOrder.findMany({ where: { status: "COMPLETADA", completedAt: { gte: monthStart } } }),
-    prisma.stockMovement.findMany({ where: { type: { in: ["BAJA", "AJUSTE_SAL"] }, createdAt: { gte: monthStart } } }),
+    prisma.productionOrder.findMany({ where: { status: "COMPLETADA", completedAt: { gte: prevFrom } } }),
+    prisma.stockMovement.findMany({ where: { type: { in: ["BAJA", "AJUSTE_SAL"] }, createdAt: { gte: prevFrom } } }),
     prisma.lot.findMany({
       where: { expiryDate: { lte: in30 }, status: { not: "BLOQUEADO" }, containers: { some: { status: { in: ["SELLADO", "ABIERTO"] } } } },
       include: { product: true, containers: { where: { status: { in: ["SELLADO", "ABIERTO"] } } } },
     }),
     prisma.lot.findMany({ where: { status: "CUARENTENA", containers: { some: { status: { in: ["SELLADO", "ABIERTO"] } } } }, orderBy: { createdAt: "asc" } }),
     prisma.dispatch.groupBy({ by: ["status"], where: { status: { in: ["PENDIENTE", "EN_ALISTAMIENTO", "DESPACHADO", "EN_TRANSITO", "NOVEDAD"] } }, _count: true }),
-    prisma.cycleCountLine.findMany({ where: { count: { status: "APROBADO", approvedAt: { gte: ago30 } } }, include: { product: true } }),
+    prisma.cycleCountLine.findMany({ where: { count: { status: "APROBADO", approvedAt: { gte: prevFrom } } }, include: { product: true, count: true } }),
+    prisma.stockMovement.findMany({ select: { createdAt: true, totalValue: true, type: true } }),
   ]);
 
-  const production = productionVariance(
-    completed.map((o) => ({ plannedQty: n(o.plannedQty), producedQty: n(o.producedQty), theoreticalCost: n(o.theoreticalCost), actualCost: n(o.actualCost) })),
-  );
+  const inCur = (d: Date | null) => !!d && d >= from;
+  const inPrev = (d: Date | null) => !!d && d >= prevFrom && d < from;
+
+  const prod = (pred: (d: Date | null) => boolean) =>
+    productionVariance(
+      completedAll.filter((o) => pred(o.completedAt)).map((o) => ({ plannedQty: n(o.plannedQty), producedQty: n(o.producedQty), theoreticalCost: n(o.theoreticalCost), actualCost: n(o.actualCost) })),
+    );
+  const production = prod(inCur);
+  const productionPrev = prod(inPrev);
+  const lossValue = (pred: (d: Date | null) => boolean) => round2(-lossesAll.filter((m) => pred(m.createdAt)).reduce((s, m) => s + n(m.totalValue), 0));
+  const accuracy = (pred: (d: Date | null) => boolean) => {
+    const ls = countLinesAll.filter((l) => pred(l.count.approvedAt));
+    return { value: countAccuracyByValue(ls.map((l) => ({ systemQty: n(l.systemQty), countedQty: n(l.countedQty), unitCost: n(l.product.avgCost) }))), lines: ls.length, counts: new Set(ls.map((l) => l.countId)).size };
+  };
+  const acc = accuracy(inCur);
+  const accPrev = accuracy(inPrev);
+
+  // Series para las gráficas
+  const valued: ValuedMove[] = moves.map((m) => ({ at: m.createdAt, value: n(m.totalValue), isTransfer: m.type === "TRASLADO_ENT" || m.type === "TRASLADO_SAL" }));
+  const bs = buckets(from, end);
+  const prevBs = bs.map((b) => ({ start: new Date(b.start.getTime() - periodDays * 86_400_000), end: new Date(b.end.getTime() - periodDays * 86_400_000) }));
+  const valueSeries = inventoryValueSeries(valued, bs);
+  const valuePrevSeries = inventoryValueSeries(valued, prevBs);
+  const flows = flowSeries(valued, bs);
+  const valueAtStart = inventoryValueSeries(valued, [{ start: from, end: from }])[0];
+
   const supplies = rows.filter((r) => r.product.type !== "PRODUCTO_TERMINADO" && n(r.product.minStock) > 0 && r.available <= n(r.product.minStock));
-  const dispatchCount = (s: string[]) => toDispatch.filter((d) => s.includes(d.status)).reduce((a, d) => a + d._count, 0);
+  const dispatchCount = (st: string[]) => toDispatch.filter((d) => st.includes(d.status)).reduce((a, d) => a + d._count, 0);
+  const total = round2(byType.MATERIA_PRIMA + byType.EMPAQUE + byType.PRODUCTO_TERMINADO);
 
   return {
-    value: { ...byType, total: round2(byType.MATERIA_PRIMA + byType.EMPAQUE + byType.PRODUCTO_TERMINADO) },
-    production: { orders: completed.length, inProgress, actual: round2(production.actual), variance: round2(production.variance), variancePct: round2(production.variancePct) },
-    losses: { value: round2(-losses.reduce((s, m) => s + n(m.totalValue), 0)), movements: losses.length },
+    period: { days: periodDays, from, to: now },
+    value: { ...byType, total, change: pctChange(total, valueAtStart) },
+    production: {
+      orders: completedAll.filter((o) => inCur(o.completedAt)).length,
+      inProgress,
+      actual: round2(production.actual),
+      variance: round2(production.variance),
+      variancePct: round2(production.variancePct),
+      change: pctChange(production.actual, productionPrev.actual),
+    },
+    losses: {
+      value: lossValue(inCur),
+      movements: lossesAll.filter((m) => inCur(m.createdAt)).length,
+      change: pctChange(lossValue(inCur), lossValue(inPrev)),
+    },
+    accuracy: { ...acc, change: acc.value !== null && accPrev.value !== null ? acc.value - accPrev.value : null },
     supplies: { count: supplies.length, critical: supplies.filter((r) => r.available <= n(r.product.safetyStock)).length, inTransit: supplies.filter((r) => r.inTransit > 0).length },
     expiring: {
       count: expiring.length,
@@ -104,10 +148,13 @@ export async function dashboard() {
     },
     toRelease: { count: toRelease.length, oldestDays: toRelease[0] ? daysBetween(toRelease[0].createdAt, new Date()) : 0 },
     toDispatch: { pending: dispatchCount(["PENDIENTE", "EN_ALISTAMIENTO"]), onTheWay: dispatchCount(["DESPACHADO", "EN_TRANSITO"]), incidents: dispatchCount(["NOVEDAD"]) },
-    accuracy: {
-      value: countAccuracyByValue(countLines.map((l) => ({ systemQty: n(l.systemQty), countedQty: n(l.countedQty), unitCost: n(l.product.avgCost) }))),
-      lines: countLines.length,
-      counts: new Set(countLines.map((l) => l.countId)).size,
+    charts: {
+      labels: bs.map((b) => b.start.toISOString()),
+      weekly: bs.length > 0 && bs[0].end.getTime() - bs[0].start.getTime() > 86_400_000,
+      value: valueSeries,
+      valuePrev: valuePrevSeries,
+      inflow: flows.map((f) => f.inflow),
+      outflow: flows.map((f) => f.outflow),
     },
   };
 }

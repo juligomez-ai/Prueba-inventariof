@@ -18,7 +18,7 @@ export interface CostPoint {
 export function CostHistoryChart({ points, unit, now: nowIso }: { points: CostPoint[]; unit: string; now: string }) {
   const [hover, setHover] = useState<number | null>(null);
   const W = 640, H = 200, L = 72, R = 16, T = 16, B = 28;
-  const color = "#4f7d32"; // validado: banda de luminosidad, croma y contraste vs superficie
+  const color = "#00A08E"; // turquesa validado: luminosidad, croma y contraste vs superficie
 
   if (points.length < 2)
     return <p className="px-5 py-6 text-sm text-muted">Aún no hay suficientes cambios de costo para graficar. El costo cambia con cada compra o producción.</p>;

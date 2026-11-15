@@ -111,3 +111,30 @@ describe("RN-5.2 vencimiento del producto vs insumos", () => {
   });
   it("sin vencimiento del producto no hay alerta", () => expect(expiryConflicts(null, [{ expiryDate: d("2020-01-01") }])).toEqual([]));
 });
+
+import { buckets, flowSeries, inventoryValueSeries, pctChange } from "@/domain/services/series";
+describe("series del tablero", () => {
+  const d = (s: string) => new Date(`${s}T12:00:00Z`);
+  const moves = [
+    { at: d("2026-01-01"), value: 1000, isTransfer: false },
+    { at: d("2026-01-03"), value: -200, isTransfer: false },
+    { at: d("2026-01-03"), value: -50, isTransfer: true },
+    { at: d("2026-01-03"), value: 50, isTransfer: true },
+    { at: d("2026-01-05"), value: 300, isTransfer: false },
+  ];
+  const bs = buckets(new Date("2026-01-02T00:00:00Z"), new Date("2026-01-06T00:00:00Z"));
+  it("cubetas diarias para periodos cortos y semanales para largos", () => {
+    expect(bs).toHaveLength(4);
+    expect(buckets(new Date("2026-01-01"), new Date("2026-04-01"))).toHaveLength(13);
+  });
+  it("valor acumulado incluye lo anterior al período y no cambia con traslados", () => {
+    expect(inventoryValueSeries(moves, bs)).toEqual([1000, 800, 800, 1100]);
+  });
+  it("entradas y salidas sin traslados", () => {
+    expect(flowSeries(moves, bs)).toEqual([{ inflow: 0, outflow: 0 }, { inflow: 0, outflow: 200 }, { inflow: 0, outflow: 0 }, { inflow: 300, outflow: 0 }]);
+  });
+  it("variación porcentual", () => {
+    expect(pctChange(116, 100)).toBeCloseTo(16);
+    expect(pctChange(5, 0)).toBeNull();
+  });
+});

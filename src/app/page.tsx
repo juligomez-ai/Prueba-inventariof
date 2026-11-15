@@ -2,14 +2,18 @@ import { AlertTriangle, ArrowRight, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { alerts, dashboard } from "@/application/use-cases/insights";
 import type { ReactNode } from "react";
+import { FlowChart, InventoryValueChart } from "@/components/dashboard-charts";
 import { OnboardingChecklist } from "@/components/onboarding-checklist";
+import { PERIODS, periodLabel, type PeriodKey } from "@/domain/services/series";
 import { Badge, ButtonLink, Card, CardBody, CardHeader, Empty, PageHeader, Stat } from "@/components/ui";
 import { prisma } from "@/infrastructure/database/prisma";
 import { fmtDate, fmtMoney, fmtPct } from "@/shared/numbers";
 
-export default async function Dashboard() {
+export default async function Dashboard(props: PageProps<"/">) {
+  const sp = await props.searchParams;
+  const period = (typeof sp.periodo === "string" && sp.periodo in PERIODS ? sp.periodo : "30") as PeriodKey;
   const [k, al, shipments] = await Promise.all([
-    dashboard(),
+    dashboard(PERIODS[period]),
     alerts(),
     prisma.shipment.findMany({
       where: { direction: "ENTRANTE", status: { not: "ENTREGADO" }, purchaseOrder: { status: { in: ["ENVIADA", "EN_TRANSITO", "RECIBIDA_PARCIAL"] } } },
@@ -19,12 +23,13 @@ export default async function Dashboard() {
     }),
   ]);
   const today = new Date();
+  const vs = period === "30" ? "vs 30 días anteriores" : period === "90" ? "vs 3 meses anteriores" : "vs 6 meses anteriores";
 
   return (
     <>
       <PageHeader
-        title="Tablero"
-        description="Inventario, producción y logística de Botánica Viva en un solo lugar."
+        title="Resumen de inventario y producción"
+        description="Botánica Viva · inventario, producción y logística en un solo lugar."
         actions={
           <>
             <ButtonLink href="/copiloto"><Sparkles className="h-4 w-4" /> Preguntar al Copiloto</ButtonLink>
@@ -32,20 +37,41 @@ export default async function Dashboard() {
           </>
         }
       />
+      <nav className="mb-5 inline-flex rounded-lg border border-border bg-card p-1 text-sm" aria-label="Período">
+        {(Object.keys(PERIODS) as PeriodKey[]).map((key) => (
+          <Link key={key} href={key === "30" ? "/" : `/?periodo=${key}`} aria-current={key === period ? "page" : undefined}
+            className={`rounded-md px-3 py-1.5 ${key === period ? "bg-accent font-medium text-primary" : "text-muted hover:text-foreground"}`}>
+            {periodLabel[key]}
+          </Link>
+        ))}
+      </nav>
+
       <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted">Dinero</h2>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Kpi href="/existencias" label="Valor del inventario" value={fmtMoney(k.value.total)}
+        <Kpi href="/existencias" label="Valor del inventario" value={fmtMoney(k.value.total)} delta={k.value.change} good="neutral" vs="vs inicio del período"
           sub={`MP ${fmtMoney(k.value.MATERIA_PRIMA)} · Empaques ${fmtMoney(k.value.EMPAQUE)} · Terminado ${fmtMoney(k.value.PRODUCTO_TERMINADO)}`} />
-        <Kpi href="/produccion" label="Costo de producción del mes" value={fmtMoney(k.production.actual)}
-          sub={k.production.orders === 0 ? `Sin órdenes completadas · ${k.production.inProgress} en proceso` : `${k.production.orders} orden(es) · ${k.production.variance === 0 ? "igual a la fórmula" : `${k.production.variance > 0 ? "+" : "−"}${fmtMoney(Math.abs(k.production.variance))} (${fmtPct(Math.abs(k.production.variancePct))}) vs fórmula`} · ${k.production.inProgress} en proceso`}
+        <Kpi href="/produccion" label="Costo de producción" value={fmtMoney(k.production.actual)} delta={k.production.change} good="neutral" vs={vs}
+          sub={k.production.orders === 0 ? `Sin órdenes completadas · ${k.production.inProgress} en proceso` : `${k.production.orders} orden(es) · ${k.production.variance === 0 ? "igual a la fórmula" : `${k.production.variance > 0 ? "+" : "−"}${fmtMoney(Math.abs(k.production.variance))} (${fmtPct(Math.abs(k.production.variancePct))}) vs fórmula`}`}
           tone={k.production.variancePct > 2 ? "yellow" : undefined} />
-        <Kpi href="/ajustes" label="Pérdidas del mes" value={fmtMoney(k.losses.value)}
+        <Kpi href="/ajustes" label="Pérdidas" value={fmtMoney(k.losses.value)} delta={k.losses.change} good="down" vs={vs}
           sub={`${k.losses.movements} baja(s) y ajuste(s) negativos`} tone={k.losses.value > 0 ? "red" : "green"} />
-        <Kpi href="/conteos" label="Exactitud del inventario" value={k.accuracy.value === null ? "—" : fmtPct(k.accuracy.value)}
-          sub={k.accuracy.value === null ? "Sin conteos aprobados en 30 días" : `Por valor · ${k.accuracy.lines} bultos en ${k.accuracy.counts} conteo(s), últimos 30 días`}
+        <Kpi href="/conteos" label="Exactitud del inventario" value={k.accuracy.value === null ? "—" : fmtPct(k.accuracy.value)} delta={k.accuracy.change} deltaPoints good="up" vs={vs}
+          sub={k.accuracy.value === null ? "Sin conteos aprobados en el período" : `Por valor · ${k.accuracy.lines} bultos en ${k.accuracy.counts} conteo(s)`}
           tone={k.accuracy.value === null ? undefined : k.accuracy.value >= 95 ? "green" : "yellow"} />
       </div>
-      <h2 className="mb-2 mt-5 text-xs font-semibold uppercase tracking-wider text-muted">Operación</h2>
+
+      <div className="mt-5 grid gap-6 xl:grid-cols-2">
+        <Card>
+          <CardHeader title="Valor del inventario" description={`${periodLabel[period]} comparado con el período anterior · costo promedio ponderado`} actions={<span className="text-lg font-semibold tabular">{fmtMoney(k.value.total)}</span>} />
+          <CardBody><InventoryValueChart labels={k.charts.labels} current={k.charts.value} previous={k.charts.valuePrev} weekly={k.charts.weekly} /></CardBody>
+        </Card>
+        <Card>
+          <CardHeader title="Entradas vs salidas" description={`En pesos, por ${k.charts.weekly ? "semana" : "día"} · sin traslados entre bodegas`} actions={<Link className="text-sm text-primary hover:underline" href="/kardex">Ver Kardex</Link>} />
+          <CardBody><FlowChart labels={k.charts.labels} inflow={k.charts.inflow} outflow={k.charts.outflow} weekly={k.charts.weekly} /></CardBody>
+        </Card>
+      </div>
+
+      <h2 className="mb-2 mt-6 text-xs font-semibold uppercase tracking-wider text-muted">Operación de hoy</h2>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Kpi href="/existencias" label="Insumos bajo mínimo" value={k.supplies.count}
           sub={k.supplies.count ? `${k.supplies.critical} crítico(s) · ${k.supplies.inTransit} ya en camino` : "Todo sobre el mínimo"}
@@ -115,10 +141,22 @@ export default async function Dashboard() {
   );
 }
 
-function Kpi({ href, ...p }: { href: string; label: string; value: ReactNode; sub?: ReactNode; tone?: "red" | "yellow" | "green" }) {
+function Kpi({ href, delta, deltaPoints, good = "neutral", vs, sub, ...p }: {
+  href: string; label: string; value: ReactNode; sub?: ReactNode; tone?: "red" | "yellow" | "green";
+  delta?: number | null; deltaPoints?: boolean; good?: "up" | "down" | "neutral"; vs?: string;
+}) {
+  // Flecha y color según si subir es bueno, malo o neutro para ese indicador
+  const d = delta === undefined || delta === null || !Number.isFinite(delta) ? null : delta;
+  const up = d !== null && d > 0.05, down = d !== null && d < -0.05;
+  const color = !d || (!up && !down) || good === "neutral" ? "text-muted" : (up && good === "up") || (down && good === "down") ? "text-green-700" : "text-red-700";
+  const badge = d === null ? null : (
+    <span className={`whitespace-nowrap text-xs font-medium ${color}`} title={vs}>
+      {up ? "↑" : down ? "↓" : "→"} {deltaPoints ? `${Math.abs(d).toLocaleString("es-CO", { maximumFractionDigits: 1 })} pts` : fmtPct(Math.abs(d))}
+    </span>
+  );
   return (
     <Link href={href} className="block rounded-xl transition hover:ring-2 hover:ring-primary/20">
-      <Stat {...p} />
+      <Stat {...p} sub={<>{badge && <span className="mb-0.5 block">{badge} <span className="text-muted">{vs}</span></span>}{sub}</>} />
     </Link>
   );
 }

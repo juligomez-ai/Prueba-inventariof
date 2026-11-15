@@ -46,9 +46,12 @@ export function Sidebar() {
   return (
     <aside className="border-b border-border bg-card md:sticky md:top-0 md:h-screen md:w-64 md:shrink-0 md:overflow-y-auto md:border-b-0 md:border-r">
       <div className="flex items-center justify-between px-4 py-4">
-        <Link href="/" className="block">
-          <div className="text-lg font-bold tracking-tight text-primary">SYNTHEX</div>
-          <div className="text-xs text-muted">Botánica Viva S.A.S. · Manufactura</div>
+        <Link href="/" className="flex items-center gap-2">
+          <Sparkles className="h-6 w-6 text-brand" aria-hidden />
+          <span>
+            <span className="block text-lg font-bold tracking-tight text-foreground">synthex</span>
+            <span className="block text-xs text-muted">Botánica Viva S.A.S.</span>
+          </span>
         </Link>
         <button className="rounded-md p-2 md:hidden" onClick={() => setOpen((o) => !o)} aria-label="Abrir menú">
           <Menu className="h-5 w-5" />
@@ -65,7 +68,7 @@ export function Sidebar() {
                   key={item.href}
                   href={item.href}
                   onClick={() => setOpen(false)}
-                  className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm ${isActive(item.href) ? "bg-accent font-medium text-primary" : "text-foreground/80 hover:bg-accent"}`}
+                  className={`flex items-center gap-2 rounded-md border-l-[3px] px-3 py-2 text-sm ${isActive(item.href) ? "border-brand bg-accent font-medium text-primary" : "border-transparent text-foreground/80 hover:bg-gray-50"}`}
                 >
                   <Icon className="h-4 w-4" />
                   {item.label}
