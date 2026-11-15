@@ -66,7 +66,7 @@ SYNTHEX ya permite **crear productos, controlar existencias y consultar movimien
 
 Empresa ficticia que usamos en el demo (datos semilla).
 
-**Por qué cosmética natural:** muestra todo lo que un módulo de manufactura tiene que resolver (varias unidades de medida, lotes obligatorios, vencimientos, empaques, productos intermedios y costos sensibles), y aun así se explica en un minuto: *"mezclo aceites y mantecas, lo envaso, lo etiqueto y lo vendo"*.
+**Por qué cosmética natural:** muestra todo lo que un módulo de manufactura tiene que resolver (varias unidades de medida, lotes obligatorios, vencimientos, empaques y costos sensibles), y aun así se explica en un minuto: *"mezclo aceites y mantecas, lo envaso, lo etiqueto y lo vendo"*.
 
 ### Bodegas
 | Código | Bodega | Uso |
@@ -89,7 +89,6 @@ Empresa ficticia que usamos en el demo (datos semilla).
 | EMP-001 | Frasco ámbar 50 g | Empaque | unidad | No |
 | EMP-002 | Tapa rosca negra | Empaque | unidad | No |
 | EMP-003 | Etiqueta crema karité | Empaque | unidad | No |
-| INT-001 | Base emoliente | Intermedio (ambos) | kg | Sí |
 | PT-001 | Crema hidratante de karité 50 g | Producto terminado | unidad | Sí |
 | PT-002 | Bálsamo labial 10 g | Producto terminado | unidad | Sí |
 | PT-003 | Jabón artesanal de avena 100 g | Producto terminado | unidad | Sí |
@@ -123,7 +122,7 @@ Revisamos el enfoque de suites ERP con módulo de manufactura (p. ej. Odoo), her
 
 | Concepto común en el mercado | Cómo lo adaptamos | Qué evitamos a propósito |
 |---|---|---|
-| Lista de materiales (BOM) | "Receta / Fórmula" con lote estándar y versión | Rutas de trabajo, centros de trabajo y operaciones |
+| Lista de materiales (BOM) | "Fórmula" de un solo nivel con rendimiento por lote | Rutas de trabajo, centros de trabajo, multinivel y versiones (Fase 2) |
 | Orden de fabricación | "Orden de producción" con 4 estados simples | Planificación por capacidad de máquinas |
 | Trazabilidad por lote y número de serie | Lote obligatorio para químicos y producto terminado; series no | Números de serie (no aplican a cosméticos) |
 | Reglas de reabastecimiento (mín/máx) | Punto de reorden calculado con pronóstico IA | MRP completo con tiempos de proveedor encadenados |
@@ -141,9 +140,8 @@ Revisamos el enfoque de suites ERP con módulo de manufactura (p. ej. Odoo), her
 |---|---|
 | **Insumo / Materia prima** | Lo que se consume para fabricar (aceites, mantecas, activos) |
 | **Material de empaque** | Insumo que no entra en la mezcla (frasco, tapa, etiqueta). Se trata igual que una materia prima |
-| **Producto intermedio** | Se fabrica y se consume en otra receta (ej. base emoliente) |
 | **Producto terminado** | Lo que se vende |
-| **Receta (BOM)** | Lista de insumos y cantidades para producir un **lote estándar** |
+| **Fórmula (receta / BOM)** | Lista de insumos y cantidades para producir un **lote estándar**. En pantalla se llama "Fórmula", como se dice en cosmética |
 | **Lote estándar / rendimiento** | Cuántas unidades produce la receta (ej. 100 cremas) |
 | **Orden de producción (OP)** | Instrucción de fabricar X unidades de un producto con una receta |
 | **Lote (batch)** | Grupo de unidades con mismo origen y fecha; tiene código y vencimiento |
@@ -177,7 +175,7 @@ flowchart LR
     KDX --- AJ[Ajustes]
   end
   subgraph MFG["Manufactura"]
-    RCP[Recetas / BOM] --> OP[Órdenes de producción]
+    RCP[Fórmulas] --> OP[Órdenes de producción]
     OP -- consume insumos --> KDX
     OP -- ingresa producto terminado --> KDX
   end
@@ -210,7 +208,7 @@ flowchart LR
 | M5 | Lotes y vencimientos | 1 | ✅ |
 | M6 | Proveedores y órdenes de compra | 1 | ✅ |
 | M7 | Tracking de envíos entrantes | 1 | ✅ |
-| M8 | Recetas / Fórmulas (BOM) | 1 | ✅ |
+| M8 | Fórmulas (receta / BOM) | 1 | ✅ |
 | M9 | Órdenes de producción | 1 | ✅ |
 | M10 | Conteo cíclico con escáner | 1 | ✅ |
 | M11 | Ajustes de inventario | 1 | ✅ |
@@ -229,13 +227,13 @@ Convenciones: **RF** = requerimiento funcional · **RN** = regla de negocio · *
 
 ### M1 · Catálogo de productos
 
-**Objetivo:** un solo catálogo donde cada ítem dice qué es (insumo, empaque, intermedio, terminado), cómo se mide y cómo se controla.
+**Objetivo:** un solo catálogo donde cada ítem dice qué es (insumo, empaque, terminado), cómo se mide y cómo se controla.
 
 **HU-1.1** Como Laura, quiero registrar mis insumos y productos con su unidad de medida para que las recetas y el stock hablen el mismo idioma.
 
 | ID | Requerimiento |
 |---|---|
-| RF-1.1 | Crear, editar, archivar productos con: SKU (único), nombre, categoría, tipo (`RAW_MATERIAL`, `PACKAGING`, `INTERMEDIATE`, `FINISHED_GOOD`), unidad base, código de barras (EAN-13 / Code128 / interno) |
+| RF-1.1 | Crear, editar, archivar productos con: SKU (único), nombre, categoría, tipo (`RAW_MATERIAL`, `PACKAGING`, `FINISHED_GOOD`; `INTERMEDIATE` llega en Fase 2 con las fórmulas multinivel), unidad base, código de barras (EAN-13 / Code128 / interno) |
 | RF-1.2 | Definir si el producto **controla lote** y si **controla vencimiento**; vida útil en días (para calcular el vencimiento automáticamente al producir) |
 | RF-1.3 | Unidades de compra distintas a la unidad base, con factor de conversión (ej. compro "garrafa 20 L" = 20 L) |
 | RF-1.4 | Datos regulatorios del producto terminado: número de NSO INVIMA y su vencimiento |
@@ -279,7 +277,7 @@ Convenciones: **RF** = requerimiento funcional · **RN** = regla de negocio · *
 | Tipo | Signo | Origen |
 |---|---|---|
 | `IN_PURCHASE` | + | Recepción de orden de compra |
-| `IN_PRODUCTION` | + | Producto terminado o intermedio de una OP |
+| `IN_PRODUCTION` | + | Producto terminado de una OP |
 | `OUT_PRODUCTION` | − | Consumo de insumos en una OP |
 | `OUT_SALE` | − | Despacho a cliente |
 | `IN_ADJUSTMENT` / `OUT_ADJUSTMENT` | ± | Ajuste manual o por conteo |
@@ -355,25 +353,27 @@ Convenciones: **RF** = requerimiento funcional · **RN** = regla de negocio · *
 | RN-7.1 | Marcar "entregado" **no** suma stock; el stock solo entra con la recepción (M6), que valida cantidades y lotes |
 | CA-7.1 | Una OC con ETA de ayer sin recibir aparece en rojo en "Por llegar" |
 
-### M8 · Recetas / Fórmulas (BOM)
+### M8 · Fórmulas (receta / BOM)
 
-**Objetivo:** digitalizar la fórmula del cuaderno, con su costo y bajo control de versiones.
+**Objetivo:** pasar al sistema la fórmula que hoy está en el cuaderno, para que diga qué descontar al producir, si alcanza el inventario y cuánto cuesta cada unidad.
 
-**HU-8.1** Como Laura, quiero registrar la fórmula de mi crema para un lote de 100 unidades, ver cuánto me cuesta y que todas las operarias produzcan igual.
+> **En una frase:** *"La fórmula es la receta de la crema: para hacer 100 unidades uso 0,8 kg de karité, 100 frascos, 100 tapas… Con eso el sistema sabe qué descontar al producir, si me alcanza y cuánto me cuesta cada crema."*
+
+**HU-8.1** Como Laura, quiero registrar la fórmula de mi crema para un lote de 100 unidades y ver cuánto me cuesta cada una.
 
 | ID | Requerimiento |
 |---|---|
-| RF-8.1 | Receta: producto resultante, nombre, **lote estándar** (cantidad y unidad que rinde), instrucciones de proceso (texto) |
-| RF-8.2 | Líneas: insumo, cantidad por lote estándar, unidad, % de merma esperada por línea (opcional) |
-| RF-8.3 | Vista alterna en **porcentaje de fórmula** (cómo piensan los formuladores cosméticos): la fase oleosa suma X%, etc. |
-| RF-8.4 | Receta **multinivel**: una línea puede ser un producto intermedio con su propia receta (base emoliente) |
-| RF-8.5 | Versiones: editar una receta usada en OPs crea una nueva versión; las OPs conservan la versión con que se crearon |
-| RF-8.6 | Receta activa por producto (una sola activa; otras en histórico) |
-| RF-8.7 | Costeo en vivo por lote y por unidad (RF-4.5) |
-| RF-8.8 | Crear receta desde texto libre con el copiloto (M13) |
-| RN-8.1 | Un producto no puede ser insumo de sí mismo (ni directa ni indirectamente: se validan ciclos) |
+| RF-8.1 | Fórmula: producto que se fabrica, nombre, **rendimiento** (cuántas unidades da: ej. 100 cremas) e instrucciones de proceso (texto opcional) |
+| RF-8.2 | Líneas: insumo o empaque, cantidad para ese rendimiento y unidad |
+| RF-8.3 | Costo por lote y por unidad, calculado en vivo con los costos promedio actuales (RF-4.5) |
+| RF-8.4 | Crear la fórmula desde texto libre con el copiloto (M13) |
+| RF-8.5 | Una fórmula por producto terminado en el MVP |
+| RN-8.1 | Una fórmula solo usa insumos y empaques (no productos terminados) |
 | RN-8.2 | Las cantidades se convierten a la unidad base del insumo al guardar |
-| CA-8.1 | La receta de crema de karité (lote 100 u) muestra costo de $292.040 por lote y $2.920 por unidad con los datos semilla |
+| RN-8.3 | Editar una fórmula **no** cambia las OPs ya creadas: cada OP guarda una copia de sus cantidades al crearse |
+| CA-8.1 | La fórmula de crema de karité (rinde 100 u) muestra costo de $292.040 por lote y $2.920 por unidad con los datos semilla |
+
+**Simplificaciones del MVP (pasan a Fase 2):** fórmulas multinivel con productos intermedios (ej. una base emoliente que se usa en varias cremas), vista en porcentaje de fórmula, historial de versiones y % de merma esperada por insumo.
 
 ### M9 · Órdenes de producción
 
@@ -392,15 +392,14 @@ stateDiagram-v2
 
 | ID | Requerimiento |
 |---|---|
-| RF-9.1 | Crear OP: producto, receta (versión activa), cantidad a producir, fecha planeada, bodega de consumo y de entrega, notas. Código `OP-0001` |
-| RF-9.2 | Cálculo de requerimientos: cantidad de cada insumo = línea de receta × (cantidad a producir ÷ lote estándar) × (1 + % merma) |
+| RF-9.1 | Crear OP: producto, fórmula, cantidad a producir, fecha planeada, bodega de consumo y de entrega, notas. Código `OP-0001` |
+| RF-9.2 | Cálculo de requerimientos: cantidad de cada insumo = cantidad en la fórmula × (cantidad a producir ÷ rendimiento). Ej.: 250 cremas con una fórmula que rinde 100 → cada insumo × 2,5 |
 | RF-9.3 | **Validación de factibilidad**: por insumo muestra requerido, disponible, faltante; y la **cantidad máxima producible** con el stock actual |
 | RF-9.4 | Si hay faltantes: botón "Crear orden de compra" con los faltantes prellenados (RF-6.7) |
 | RF-9.5 | Al **iniciar**: reserva lotes con FEFO (editable). El stock reservado deja de estar disponible para otras OPs y despachos |
 | RF-9.6 | Al **completar**: registrar consumo real por insumo y lote (por defecto = teórico), unidades buenas producidas, lote resultante y vencimiento |
 | RF-9.7 | Completar es **atómico** (una transacción): salidas `OUT_PRODUCTION` de cada insumo + entrada `IN_PRODUCTION` del terminado con su costo real. Si algo falla, no se aplica nada |
 | RF-9.8 | Resumen de cierre: costo teórico vs real, rendimiento (producido ÷ planeado), variación por insumo |
-| RF-9.9 | Producción de intermedios: una OP de base emoliente deja stock del intermedio para otras OPs |
 | RF-9.10 | Imprimir orden (hoja de trabajo para la operaria) con fórmula, cantidades y lotes asignados |
 | RN-9.1 | No se puede iniciar una OP sin stock disponible suficiente (en el MVP no se permite producción parcial con faltantes) |
 | RN-9.2 | Una OP completada es inmutable; un error se corrige con ajuste |
@@ -507,7 +506,7 @@ Detalle completo en la [sección 10](#10-copiloto-ia).
 **Flujo:**
 1. **Histórico:** ventas mensuales por producto terminado (de `OUT_SALE` y del módulo de ventas existente), mínimo 6 meses; con menos se avisa que la confianza es baja.
 2. **Pronóstico con IA:** el modelo recibe la serie histórica y propone una **senda de ventas** a 3–6 meses (tendencia, estacionalidad como temporadas de regalo, y un % de crecimiento explícito), con una explicación en texto. El usuario puede **ajustar** cada mes o el % de crecimiento, y queda registrada la versión aprobada.
-3. **Explosión de necesidades:** demanda de PT → unidades a producir → insumos requeridos por mes (usando las recetas, incluidos intermedios).
+3. **Explosión de necesidades:** demanda de PT → unidades a producir → insumos requeridos por mes (usando las fórmulas).
 4. **Cálculos por ítem:**
    - Demanda diaria promedio `d` = demanda proyectada del período ÷ días.
    - Stock de seguridad `SS` = `z × σ_d × √LT` (z = 1,65 para 95% de nivel de servicio). Si no hay suficiente historia: `SS` = días de seguridad × `d`.
@@ -705,9 +704,9 @@ erDiagram
 | `Lot` | productId, code, expiryDate, status, supplierLot, sourceType (PURCHASE/PRODUCTION), sourceRef |
 | `StockLevel` | productId, warehouseId, lotId, onHand, reserved |
 | `StockMovement` | productId, warehouseId, lotId, type, quantity (±), unitCost, avgCostAfter, balanceAfter, reference, reason, createdAt |
-| `Recipe` | productId, name, version, isActive, yieldQuantity, yieldUnit, instructions |
-| `RecipeItem` | recipeId, ingredientId, quantity, unit, scrapPercent |
-| `ProductionOrder` | code, productId, recipeId, recipeVersion, plannedQty, producedQty, status, outputLotId, theoreticalCost, actualCost, plannedDate, completedAt |
+| `Recipe` (Fórmula) | productId (único en MVP), name, yieldQuantity, yieldUnit, instructions |
+| `RecipeItem` | recipeId, ingredientId, quantity, unit |
+| `ProductionOrder` | code, productId, recipeId, plannedQty, producedQty, status, outputLotId, theoreticalCost, actualCost, plannedDate, completedAt |
 | `ProductionConsumption` | orderId, productId, lotId, plannedQty, reservedQty, consumedQty, unitCost |
 | `Supplier` | taxId (NIT), name, contact, phone, email, city, paymentTermDays, leadTimeDays |
 | `PurchaseOrder` / `PurchaseOrderLine` | code, supplierId, status, expectedDate / productId, qty, unit, unitPrice, taxRate, receivedQty |
@@ -753,7 +752,7 @@ src/
 ├── domain/
 │   ├── entities/                # Product, Lot, Recipe, ProductionOrder, StockMovement…
 │   ├── value-objects/           # Quantity, Unit, Money, LotCode, OrderStatus
-│   ├── services/                # WeightedAverageCost, FefoAllocator, RecipeExploder
+│   ├── services/                # WeightedAverageCost, FefoAllocator, RequirementsCalculator
 │   └── repositories/            # Interfaces
 ├── application/use-cases/
 │   ├── ValidateProductionFeasibilityUseCase.ts
@@ -777,11 +776,12 @@ src/
 ## 13. Qué incluye el demo y qué queda para después
 
 ### ✅ Demo (Fase 1)
-Catálogo, bodegas y traslados, existencias y Kardex, costo promedio ponderado y valorización, lotes y vencimientos con FEFO y trazabilidad, proveedores y órdenes de compra con recepción, tracking de envíos entrantes, recetas multinivel con costeo, órdenes de producción, conteo cíclico con escáner (cámara + pistola), ajustes, despachos con tracking saliente, copiloto IA (Gemini), centro de ayuda y tablero básico.
+Catálogo, bodegas y traslados, existencias y Kardex, costo promedio ponderado y valorización, lotes y vencimientos con FEFO y trazabilidad, proveedores y órdenes de compra con recepción, tracking de envíos entrantes, fórmulas con costeo, órdenes de producción, conteo cíclico con escáner (cámara + pistola), ajustes, despachos con tracking saliente, copiloto IA (Gemini), centro de ayuda y tablero básico.
 
 ### 🔜 Fase 2
 - **Planeación con pronóstico IA, punto de reorden, cobertura y explosión de necesidades (M16).**
 - **Sincronización automática del tracking** (entrante y saliente): un componente que consulta periódicamente el estado real de cada guía abierta (o recibe notificaciones de la transportadora) y actualiza el tablero solo (ej. "Entregado"), con alertas de novedad. Se diseña con un conector por transportadora y una fuente intercambiable: integración oficial de cada transportadora o un servicio que agrupe varias. Requiere convenios y credenciales. El estado manual queda como respaldo.
+- **Fórmulas avanzadas:** multinivel con productos intermedios, versiones, vista en % de fórmula y % de merma por insumo.
 - Cuarentena y liberación por control de calidad para producto terminado.
 - Costo en destino (fletes y aranceles distribuidos sobre la compra).
 - Mano de obra y CIF en el costo de producción.
@@ -819,7 +819,7 @@ Catálogo, bodegas y traslados, existencias y Kardex, costo promedio ponderado y
 | Riesgo | Mitigación |
 |---|---|
 | La IA identifica mal un producto o una cantidad | Solo crea borradores; pide confirmación; muestra la tabla de datos usada |
-| Errores de conversión de unidades (g vs kg) | Conversión a unidad base en dominio; validaciones; vista en % de fórmula |
+| Errores de conversión de unidades (g vs kg) | Conversión a unidad base en dominio; validaciones; mostrar la unidad junto a cada cantidad |
 | Concurrencia: dos OPs reservan el mismo lote | Reservas dentro de transacciones y validación de disponible al iniciar |
 | Adopción: usuarios sin experiencia en manufactura | Centro de ayuda, onboarding guiado, estados vacíos que enseñan, copiloto |
 | Pronóstico poco confiable con poco histórico | Mostrar nivel de confianza y permitir ajuste manual |
