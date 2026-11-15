@@ -362,12 +362,13 @@ Convenciones: **RF** = requerimiento funcional · **RN** = regla de negocio · *
 | RF-5.1.2 | **Al recibir una compra** (M6) se indica cuántos bultos llegaron y cuánto trae cada uno (ej. 3 sacos de 25 kg). El sistema crea 3 seriales, uno por saco |
 | RF-5.1.3 | **Al completar una OP** (M9) el producto terminado se empaca en bultos (ej. 100 cremas en cajas de 24 → 4 cajas de 24 y 1 de 4) y se crea un serial por caja |
 | RF-5.1.4 | **Inventario inicial y ajustes positivos** también generan seriales, para serializar el inventario que ya existe |
-| RF-5.1.5 | Etiqueta para **impresora térmica de 50 × 25 mm**: código de barras **Code 128** con el serial, nombre corto del producto, SKU, lote, vencimiento y cantidad con su unidad. Se genera un PDF con el tamaño exacto de la etiqueta, una por página, que se imprime con el controlador de la impresora |
+| RF-5.1.5 | Etiqueta para **impresora térmica de 50 × 25 mm**: código de barras **Code 128** con el serial, nombre corto del producto, SKU, lote, vencimiento y **cantidad inicial** con su unidad, impresa como "Cant. inicial: 24 u" para que nadie la confunda con lo que contiene hoy. Se genera un PDF con el tamaño exacto de la etiqueta, una por página, que se imprime con el controlador de la impresora |
 | RF-5.1.6 | Impresión en lote (todas las etiquetas de una recepción u OP) y reimpresión de una etiqueta dañada |
 | RF-5.1.7 | Cada serial guarda su **cantidad actual**: si de un saco de 25 kg se consumen 0,8 kg, el saco queda en 24,2 kg |
-| RF-5.1.8 | **Escanear un serial** precarga producto, lote y cantidad en: conteo cíclico (M10), traslados (M2), consumo de OP (M9) y alistamiento de despachos (M12) |
+| RF-5.1.8 | **Escanear un serial** precarga producto, lote y cantidad actual en: traslados (M2), consumo de OP (M9) y alistamiento de despachos (M12). En el **conteo cíclico** la cantidad se precarga solo si el bulto está `SELLADO`; si está `ABIERTO` hay que contar y digitar (RF-10.5) |
 | RF-5.1.9 | Traslado de un bulto completo escaneando su serial (mueve toda su cantidad a la bodega destino) |
-| RF-5.1.10 | Estados del serial: `ACTIVO`, `VACIO` (cantidad 0), `DADO_DE_BAJA`. Historial de movimientos por serial |
+| RF-5.1.10 | Estados del serial: `SELLADO` (cantidad actual = inicial), `ABIERTO` (ya se sacó algo), `VACIO` (cantidad 0), `DADO_DE_BAJA`. Historial de movimientos por serial |
+| RF-5.1.12 | Un bulto pasa a `ABIERTO` **automáticamente** con la primera salida parcial (consumo, despacho o ajuste), o **manualmente** si alguien lo abrió (ej. para tomar una muestra) o si en un conteo se reporta el sello roto |
 | RF-5.1.11 | Etiqueta **por SKU** (solo el código del producto, sin serial) para estanterías y para ítems sin código del fabricante |
 | RN-5.1.1 | El serial es único e inmutable; nunca se reutiliza, aunque el bulto quede vacío |
 | RN-5.1.2 | Un bulto pertenece a **un solo producto y un solo lote**; no se mezclan lotes en un bulto |
@@ -484,12 +485,17 @@ flowchart LR
 | RF-10.2 | Crear sesión de conteo: bodega, lista de ítems (sugeridos por ABC y fecha del último conteo, o manual) |
 | RF-10.3 | **Conteo ciego** opcional: la persona no ve la cantidad del sistema |
 | RF-10.4 | Escaneo con **cámara del celular** desde el navegador y con **pistola USB/Bluetooth** (modo teclado: un campo con foco que recibe el código + Enter) |
-| RF-10.5 | Escanear el **serial del bulto** (M5.1) identifica producto, lote y cantidad esperada; la persona confirma o corrige la cantidad. Si se escanea un código de producto (SKU o del fabricante), se elige el lote y se ingresa la cantidad |
+| RF-10.5 | Escanear el **serial del bulto** (M5.1) identifica producto y lote. Según su estado: |
+| RF-10.5a | **Bulto `SELLADO`:** un escaneo confirma la cantidad completa. Se pregunta "¿Sello intacto?" (sí por defecto); si la respuesta es no, se trata como abierto |
+| RF-10.5b | **Bulto `ABIERTO`:** aparece el aviso **"Caja abierta: cuenta las unidades"** y la cantidad **no se precarga**; hay que digitarla. En insumos a granel se digita el peso o volumen medido (ej. con báscula) |
+| RF-10.5c | Si se escanea un código de producto (SKU o del fabricante) en vez de un serial, se elige el lote y se digita la cantidad |
+| RN-10.3 | Las diferencias se ajustan **sobre el serial exacto** (`AJUSTE_SAL` / `AJUSTE_ENT` · ADJ, documento CC), para saber en qué caja faltó o sobró |
 | RF-10.6 | Feedback sonoro/visual; aviso de código desconocido |
 | RF-10.7 | Reporte de diferencias: cantidad y valor, por ítem y lote; % de exactitud de la sesión |
 | RF-10.8 | Aprobación del conteo: genera ajustes con motivo "Conteo cíclico CC-0001" |
 | RN-10.1 | Mientras una sesión está abierta, los movimientos de esos ítems se registran y se tienen en cuenta en la diferencia (se compara contra el stock al momento del escaneo) |
 | RN-10.2 | Diferencias que superen un umbral de valor (configurable) requieren comentario |
+| CA-10.2 | La caja `PT-001-000045` (inicial 24, el sistema dice 18 porque se despacharon 6) se escanea: aparece "Caja abierta: cuenta las unidades", se digitan 16 y, al aprobar, se crea un ajuste de −2 sobre ese serial |
 | CA-10.1 | Escanear 48 frascos cuando el sistema tiene 50 muestra diferencia de −2 ($2.400) y, al aprobar, crea `AJUSTE_SAL` (ADJ) de 2 con documento CC |
 
 ### M11 · Ajustes de inventario
