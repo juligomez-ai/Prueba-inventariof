@@ -235,7 +235,7 @@ Convenciones: **RF** = requerimiento funcional · **RN** = regla de negocio · *
 
 | ID | Requerimiento |
 |---|---|
-| RF-1.1 | Crear, editar, archivar productos con: SKU (único), nombre, categoría, tipo (`RAW_MATERIAL`, `PACKAGING`, `FINISHED_GOOD`; `INTERMEDIATE` llega en Fase 2 con las fórmulas multinivel), unidad base, código de barras (EAN-13 / Code128 / interno) |
+| RF-1.1 | Crear, editar, archivar productos con: SKU (único), nombre, categoría, tipo (`MATERIA_PRIMA`, `EMPAQUE`, `PRODUCTO_TERMINADO`; `INTERMEDIO` llega en Fase 2 con las fórmulas multinivel), unidad base, código de barras (EAN-13 / Code128 / interno) |
 | RF-1.2 | Definir si el producto **controla lote** y si **controla vencimiento**; vida útil en días (para calcular el vencimiento automáticamente al producir) |
 | RF-1.3 | Unidades de compra distintas a la unidad base, con factor de conversión (ej. compro "garrafa 20 L" = 20 L) |
 | RF-1.4 | Datos regulatorios del producto terminado: número de NSO INVIMA y su vencimiento |
@@ -277,6 +277,8 @@ Convenciones: **RF** = requerimiento funcional · **RN** = regla de negocio · *
 | RN-3.3 | Por defecto no se permite stock negativo (configurable a futuro) |
 | RN-3.4 | **No existe un movimiento sin documento soporte.** Si un dato obligatorio de trazabilidad falta (lote en un producto que lo controla, remisión en una salida a cliente, motivo en un ajuste), el movimiento no se guarda |
 | CA-3.1 | Desde el saldo de 112 cremas se abre el Kardex; al hacer clic en la salida de 24 u se ve la remisión REM-0003, el cliente, el lote, los seriales de las cajas, la guía y quién la registró |
+
+**Convención de códigos:** todos los códigos de estados, tipos de producto y tipos de movimiento están en español, porque es una PyME colombiana. En los movimientos y documentos se agrega la sigla internacional de logística.
 
 **Tipos de movimiento.** Se muestran en español, con la sigla internacional de logística entre paréntesis. Así el usuario los entiende y el equipo técnico, los proveedores y las integraciones hablan el mismo idioma.
 
@@ -335,7 +337,7 @@ Convenciones: **RF** = requerimiento funcional · **RN** = regla de negocio · *
 | RF-5.4 | **Trazabilidad hacia atrás:** desde un lote de crema, ver qué lotes de insumos se usaron y de qué proveedor |
 | RF-5.5 | **Trazabilidad hacia adelante:** desde un lote de insumo, ver en qué lotes de producto terminado se usó y a qué clientes se despachó |
 | RF-5.6 | Alertas: lotes que vencen en ≤ 30/60/90 días; lotes vencidos bloqueados para consumo y despacho |
-| RF-5.7 | Estado del lote: `AVAILABLE`, `QUARANTINE`, `BLOCKED`, `EXPIRED` |
+| RF-5.7 | Estado del lote: `DISPONIBLE`, `CUARENTENA`, `BLOQUEADO`, `VENCIDO` |
 | RN-5.1 | Un lote vencido no se puede consumir ni despachar; solo dar de baja (`BAJA` · SCR) |
 | RN-5.2 | El vencimiento del producto terminado no puede ser posterior al vencimiento más próximo de sus insumos (alerta; no bloqueo en MVP) |
 | CA-5.1 | Ante un reclamo del lote `PT001-261114-01`, en 2 clics se ve el lote de karité usado y su proveedor |
@@ -359,7 +361,7 @@ Convenciones: **RF** = requerimiento funcional · **RN** = regla de negocio · *
 | RF-5.1.7 | Cada serial guarda su **cantidad actual**: si de un saco de 25 kg se consumen 0,8 kg, el saco queda en 24,2 kg |
 | RF-5.1.8 | **Escanear un serial** precarga producto, lote y cantidad en: conteo cíclico (M10), traslados (M2), consumo de OP (M9) y alistamiento de despachos (M12) |
 | RF-5.1.9 | Traslado de un bulto completo escaneando su serial (mueve toda su cantidad a la bodega destino) |
-| RF-5.1.10 | Estados del serial: `ACTIVE`, `EMPTY` (cantidad 0), `SCRAPPED` (dado de baja). Historial de movimientos por serial |
+| RF-5.1.10 | Estados del serial: `ACTIVO`, `VACIO` (cantidad 0), `DADO_DE_BAJA`. Historial de movimientos por serial |
 | RF-5.1.11 | Etiqueta **por SKU** (solo el código del producto, sin serial) para estanterías y para ítems sin código del fabricante |
 | RN-5.1.1 | El serial es único e inmutable; nunca se reutiliza, aunque el bulto quede vacío |
 | RN-5.1.2 | Un bulto pertenece a **un solo producto y un solo lote**; no se mezclan lotes en un bulto |
@@ -378,13 +380,13 @@ Convenciones: **RF** = requerimiento funcional · **RN** = regla de negocio · *
 | RF-6.1 | CRUD de proveedores: NIT, razón social, contacto, teléfono, correo, ciudad, plazo de pago, tiempo de entrega promedio (días) |
 | RF-6.2 | Lista de precios por proveedor y producto (último precio pagado se actualiza solo) |
 | RF-6.3 | Orden de compra: proveedor, fecha, fecha esperada, líneas (producto, cantidad, unidad de compra, precio unitario, IVA), total |
-| RF-6.4 | Estados: `DRAFT` → `SENT` → `IN_TRANSIT` → `PARTIALLY_RECEIVED` → `RECEIVED` / `CANCELLED` |
+| RF-6.4 | Estados: `BORRADOR` → `ENVIADA` → `EN_TRANSITO` → `RECIBIDA_PARCIAL` → `RECIBIDA` / `ANULADA` |
 | RF-6.5 | Recepción total o parcial: cantidad recibida, lote, vencimiento, bodega destino, número de bultos (genera seriales y etiquetas, M5.1) y **número de remisión del proveedor** (obligatorio). Genera `ENT_COMPRA` (GR) y recalcula costo promedio |
 | RF-6.6 | Diferencias en recepción (pedí 10, llegaron 9) quedan registradas en la OC |
 | RF-6.7 | Crear OC desde la sugerencia de faltantes de una OP o desde el copiloto (prellenada) |
 | RF-6.8 | Exportar OC a PDF para enviar al proveedor |
 | RN-6.1 | El costo que entra al inventario es el precio unitario **sin IVA** convertido a la unidad base |
-| RN-6.2 | Solo una OC en `SENT` o posterior suma al stock "en tránsito / por llegar" |
+| RN-6.2 | Solo una OC en `ENVIADA` o posterior suma al stock "en tránsito / por llegar" |
 | CA-6.1 | Al recibir 3 kg de karité de la OC-0007, el stock sube 3 kg, aparece el lote en BOD-MP y el Kardex muestra el nuevo costo promedio |
 
 ### M7 · Tracking de envíos entrantes
@@ -430,13 +432,13 @@ Convenciones: **RF** = requerimiento funcional · **RN** = regla de negocio · *
 
 ```mermaid
 stateDiagram-v2
-  [*] --> DRAFT: Crear (manual o copiloto)
-  DRAFT --> IN_PROGRESS: Iniciar\n(valida stock y reserva lotes FEFO)
-  DRAFT --> CANCELLED
-  IN_PROGRESS --> COMPLETED: Completar\n(consume real, ingresa PT con lote y costo)
-  IN_PROGRESS --> CANCELLED: Cancelar\n(libera reservas)
-  COMPLETED --> [*]
-  CANCELLED --> [*]
+  [*] --> BORRADOR: Crear (manual o copiloto)
+  BORRADOR --> EN_PROCESO: Iniciar\n(valida stock y reserva lotes FEFO)
+  BORRADOR --> ANULADA
+  EN_PROCESO --> COMPLETADA: Completar\n(consume real, ingresa PT con lote y costo)
+  EN_PROCESO --> ANULADA: Anular\n(libera reservas)
+  COMPLETADA --> [*]
+  ANULADA --> [*]
 ```
 
 | ID | Requerimiento |
@@ -452,7 +454,7 @@ stateDiagram-v2
 | RF-9.10 | Imprimir orden (hoja de trabajo para la operaria) con fórmula, cantidades y lotes asignados |
 | RN-9.1 | No se puede iniciar una OP sin stock disponible suficiente (en el MVP no se permite producción parcial con faltantes) |
 | RN-9.2 | Una OP completada es inmutable; un error se corrige con ajuste |
-| RN-9.3 | Cancelar una OP en proceso libera sus reservas y no genera movimientos |
+| RN-9.3 | Anular una OP en proceso libera sus reservas y no genera movimientos |
 | CA-9.1 | Al completar OP-0001 de 100 cremas: karité baja 0,8 kg, frascos bajan 100, crema sube 100 u con lote nuevo y costo $2.920,40 c/u; todo visible en el Kardex con referencia OP-0001 |
 
 ### M10 · Conteo cíclico con escáner
@@ -502,11 +504,11 @@ flowchart LR
 |---|---|
 | RF-12.1 | Crear despacho desde un pedido/factura existente de SYNTHEX (S7) o manual en el demo: cliente, dirección, líneas |
 | RF-12.2 | Asignación de lotes FEFO al alistar; lista de alistamiento (picking) con verificación escaneando el serial de cada caja (M5.1) |
-| RF-12.3 | Estados: `PENDING` → `PICKING` → `SHIPPED` → `IN_TRANSIT` → `DELIVERED` / `INCIDENT` / `RETURNED` |
+| RF-12.3 | Estados: `PENDIENTE` → `EN_ALISTAMIENTO` → `DESPACHADO` → `EN_TRANSITO` → `ENTREGADO` / `NOVEDAD` / `DEVUELTO` |
 | RF-12.4 | Datos de envío: transportadora, número de guía, costo del flete, fecha de despacho, ETA |
-| RF-12.5 | Al pasar a `SHIPPED`: genera la **remisión de entrega** `REM-0001` y una salida `SAL_VENTA` (GI) por lote, valorizada al costo promedio. Cada movimiento queda con el número de remisión |
+| RF-12.5 | Al pasar a `DESPACHADO`: genera la **remisión de entrega** `REM-0001` y una salida `SAL_VENTA` (GI) por lote, valorizada al costo promedio. Cada movimiento queda con el número de remisión |
 | RF-12.5b | **Remisión de entrega en PDF**: número, fecha, datos del cliente (razón social, NIT, dirección, ciudad), referencia del pedido o factura, productos con cantidad, lote, vencimiento y seriales de las cajas, transportadora, número de guía y espacio para nombre, firma, cédula y fecha de quien recibe |
-| RF-12.5c | Al pasar a `DELIVERED`: adjuntar la **remisión firmada** (foto o PDF) como prueba de entrega (POD, *Proof of Delivery*) |
+| RF-12.5c | Al pasar a `ENTREGADO`: adjuntar la **remisión firmada** (foto o PDF) como prueba de entrega (POD, *Proof of Delivery*) |
 | RN-12.2 | La remisión acompaña la mercancía y **no reemplaza la factura electrónica**, que sigue emitiéndose en el módulo de ventas de SYNTHEX |
 | RF-12.6 | Línea de tiempo de eventos de tracking (manual en MVP) y enlace a la página oficial de rastreo (RF-7.3b) |
 | RF-12.7 | Tablero de despachos: pendientes, en tránsito, con novedad, entregados |
@@ -765,7 +767,7 @@ erDiagram
 | `ProductionConsumption` | orderId, productId, lotId, plannedQty, reservedQty, consumedQty, unitCost |
 | `Supplier` | taxId (NIT), name, contact, phone, email, city, paymentTermDays, leadTimeDays |
 | `PurchaseOrder` / `PurchaseOrderLine` | code, supplierId, status, expectedDate, supplierRemissionNumbers / productId, qty, unit, unitPrice, taxRate, receivedQty |
-| `Shipment` | direction (INBOUND/OUTBOUND), purchaseOrderId?, dispatchId?, carrier, trackingNumber, trackingUrl, shippedAt, eta, status |
+| `Shipment` | direction (ENTRANTE/SALIENTE), purchaseOrderId?, dispatchId?, carrier, trackingNumber, trackingUrl, shippedAt, eta, status |
 | `ShipmentEvent` | shipmentId, status, note, occurredAt |
 | `Dispatch` / `DispatchLine` | remissionNumber (REM-), customerName, customerTaxId, address, city, salesRef, status, signedProofUrl / productId, lotId, containerId, qty |
 | `CycleCount` / `CycleCountLine` | code, warehouseId, status, isBlind / productId, lotId, systemQty, countedQty, difference |
