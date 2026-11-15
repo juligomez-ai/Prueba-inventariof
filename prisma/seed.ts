@@ -4,8 +4,11 @@
  * así el Kardex, los costos y los bultos quedan consistentes.
  *
  * Solo siembra si la base está vacía. Con SEED_RESET=1 borra todo antes (solo desarrollo).
+ * Por defecto carga prisma/demo-data.sql (rápido); con DEMO_SIMULATE=1 simula la historia completa.
  */
+import fs from "node:fs";
 import { PrismaClient } from "@prisma/client";
+import { loadSnapshot, SNAPSHOT_FILE } from "./snapshot";
 import * as catalog from "@/application/use-cases/catalog";
 import * as dispatches from "@/application/use-cases/dispatches";
 import * as inv from "@/application/use-cases/inventory";
@@ -26,6 +29,12 @@ async function main() {
   if (process.env.SEED_RESET === "1") await reset();
   if ((await prisma.product.count()) > 0) {
     console.log("La base ya tiene datos: no se siembra (usa SEED_RESET=1 para reiniciar en desarrollo).");
+    return;
+  }
+  // Camino rápido (despliegue): cargar la foto SQL con la historia ya simulada
+  if (process.env.DEMO_SIMULATE !== "1" && fs.existsSync(SNAPSHOT_FILE)) {
+    await loadSnapshot(prisma);
+    console.log("Datos de ejemplo de Botánica Viva cargados desde la foto.");
     return;
   }
 

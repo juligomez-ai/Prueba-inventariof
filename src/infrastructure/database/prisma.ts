@@ -14,7 +14,8 @@ export async function inTransaction<T>(fn: (tx: Tx) => Promise<T>, retries = 3):
     try {
       return await prisma.$transaction(fn, {
         isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-        timeout: 20_000,
+        timeout: 60_000,
+        maxWait: 15_000,
       });
     } catch (e) {
       const conflict =

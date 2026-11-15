@@ -958,11 +958,13 @@ npm run db:reset
 
 ### Datos de ejemplo
 
-`npm run db:seed` carga a **Botánica Viva** con 6 meses de operación (`prisma/seed.ts` y `prisma/seed-history.ts`), creada con los mismos casos de uso de la aplicación (el Kardex, los costos y los bultos cuadran):
+`npm run db:seed` carga a **Botánica Viva** con 6 meses de operación. La historia se simula con los mismos casos de uso de la aplicación (`prisma/seed.ts` y `prisma/seed-history.ts`), así que el Kardex, los costos y los bultos cuadran:
 - Inventario inicial hace 6 meses, al "implementar SYNTHEX".
 - Semana a semana: compras de los insumos faltantes (precios que suben ~0,5 % al mes), producción cuando el stock no cubre ~2,5 semanas de demanda, liberación por calidad y despachos a cinco clientes. La demanda tiene temporadas: Día de la Madre (mayo), Amor y Amistad (septiembre) y fin de año.
 - Cada mes, una baja por daño y un conteo cíclico de empaques.
 - La última semana deja listo el recorrido del demo: compra de envases retrasada, glicerina de corta fecha, jabón en cuarentena, remisión pendiente, orden de serum en borrador y compra de lavanda en borrador.
+
+**Cómo se carga en el despliegue.** Simular los 6 meses hace unas 30.000 consultas. Desde los servidores de build de Vercel (EE. UU.) hasta la base en São Paulo eso tarda demasiado y supera el tiempo máximo de una transacción. Por eso la historia se simula una vez en local con `npm run demo:export`, que genera `prisma/demo-data.sql` (INSERTs de pg_dump). `npm run db:seed` carga ese archivo en segundos y **desplaza todas las fechas para que la historia termine el día de la carga**. Con `DEMO_SIMULATE=1` se fuerza la simulación completa.
 
 ### QA de punta a punta
 
