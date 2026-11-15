@@ -481,17 +481,17 @@ flowchart LR
 
 | ID | Requerimiento |
 |---|---|
-| RF-10.1 | Clasificación ABC automática por valor de inventario (A: 80% del valor, B: 15%, C: 5%) con frecuencia sugerida (A semanal, B mensual, C trimestral) |
+| RF-10.1 | **Clasificación ABC automática** para contar más seguido lo que más dinero representa. El sistema ordena los productos por valor en inventario (cantidad × costo): **A** = pocos ítems que suman el 80% del valor (se cuentan cada semana, ej. aceite esencial, vitamina E, cremas), **B** = el siguiente 15% (cada mes), **C** = muchos ítems de poco valor que suman el 5% (cada tres meses, ej. tapas, etiquetas). Con eso sugiere qué contar cada semana. El usuario no configura nada |
 | RF-10.2 | Crear sesión de conteo: bodega, lista de ítems (sugeridos por ABC y fecha del último conteo, o manual) |
-| RF-10.3 | **Conteo ciego** opcional: la persona no ve la cantidad del sistema |
+| RF-10.3 | **Cantidad oculta al contar, visible al revisar.** Mientras cuenta, la persona ve producto, lote y vencimiento, pero **no** la cantidad que espera el sistema (evita que confirme sin contar). Al cerrar la sesión, quien revisa ve sistema vs contado y la diferencia (RF-10.7) |
 | RF-10.4 | Escaneo con **cámara del celular** desde el navegador y con **pistola USB/Bluetooth** (modo teclado: un campo con foco que recibe el código + Enter) |
 | RF-10.5 | Escanear el **serial del bulto** (M5.1) identifica producto y lote. Según su estado: |
-| RF-10.5a | **Bulto `SELLADO`:** un escaneo confirma la cantidad completa. Se pregunta "¿Sello intacto?" (sí por defecto); si la respuesta es no, se trata como abierto |
+| RF-10.5a | **Bulto `SELLADO`:** un escaneo confirma la cantidad completa (en pantalla aparece "Caja sellada ✓", sin mostrar la cantidad del sistema). Se pregunta "¿Sello intacto?" (sí por defecto); si la respuesta es no, se trata como abierto |
 | RF-10.5b | **Bulto `ABIERTO`:** aparece el aviso **"Caja abierta: cuenta las unidades"** y la cantidad **no se precarga**; hay que digitarla. En insumos a granel se digita el peso o volumen medido (ej. con báscula) |
 | RF-10.5c | Si se escanea un código de producto (SKU o del fabricante) en vez de un serial, se elige el lote y se digita la cantidad |
 | RN-10.3 | Las diferencias se ajustan **sobre el serial exacto** (`AJUSTE_SAL` / `AJUSTE_ENT` · ADJ, documento CC), para saber en qué caja faltó o sobró |
 | RF-10.6 | Feedback sonoro/visual; aviso de código desconocido |
-| RF-10.7 | Reporte de diferencias: cantidad y valor, por ítem y lote; % de exactitud de la sesión |
+| RF-10.7 | Revisión del conteo: por ítem, lote y serial se ve cantidad del sistema, cantidad contada, diferencia en unidades y en pesos; % de exactitud de la sesión |
 | RF-10.8 | Aprobación del conteo: genera ajustes con motivo "Conteo cíclico CC-0001" |
 | RN-10.1 | Mientras una sesión está abierta, los movimientos de esos ítems se registran y se tienen en cuenta en la diferencia (se compara contra el stock al momento del escaneo) |
 | RN-10.2 | Diferencias que superen un umbral de valor (configurable) requieren comentario |
