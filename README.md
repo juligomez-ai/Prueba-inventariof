@@ -4,11 +4,11 @@
 
 | Entregable | Enlace |
 |---|---|
-| Demo funcional con IA | _pendiente: URL de Vercel_ |
+| Demo funcional con IA | https://prueba-inventariof.vercel.app/ |
 | Video (máx. 8 min) | _pendiente: URL del video_ |
 | Repositorio | este repositorio |
 
-**Estado:** la Fase 1 está construida y probada (ver [§13](#13-qué-incluye-el-demo-y-qué-queda-para-después) y [§17](#17-recorrido-sugerido-del-demo)). Falta desplegarla en Vercel con la base de Supabase ([§16](#16-ejecución-local-y-despliegue)).
+**Estado:** la Fase 1 está construida y probada (ver [§13](#13-qué-incluye-el-demo-y-qué-queda-para-después) y [§17](#17-recorrido-sugerido-del-demo)). Está desplegada en Vercel (región São Paulo) con base de datos en Supabase ([§16](#16-ejecución-local-y-despliegue)).
 
 ---
 
