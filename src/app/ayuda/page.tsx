@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Card, CardBody, CardHeader, PageHeader } from "@/components/ui";
+import { HELP_TOPICS } from "@/shared/help";
 import { movementLabel } from "@/shared/labels";
 
 const quickStart = [
@@ -8,45 +9,6 @@ const quickStart = [
   { t: "Crea tu fórmula", d: "Fórmulas → elige el producto y agrega los insumos para un lote (ej. 100 cremas). O dísela al Copiloto en texto libre.", href: "/formulas" },
   { t: "Produce", d: "Órdenes de producción → Nueva. El sistema te dice si te alcanza; al completar descuenta insumos y crea el lote.", href: "/produccion/nueva" },
   { t: "Revisa tu costo", d: "En la orden completada y en Fórmulas ves el costo real por unidad y el margen.", href: "/formulas" },
-];
-
-const guides = [
-  {
-    t: "Comprar y recibir",
-    steps: [
-      "Compras → Nueva orden de compra (o desde los faltantes de una orden de producción).",
-      "Marca la OC como enviada y registra el envío del proveedor: transportadora, guía y fecha estimada.",
-      "Cuando llegue, Recibir mercancía: cantidad, número de bultos, lote y vencimiento, y la remisión del proveedor (obligatoria).",
-      "Imprime las etiquetas de los bultos y pégalas. El costo promedio se recalcula solo.",
-    ],
-  },
-  {
-    t: "Producir",
-    steps: [
-      "Nueva orden: elige producto y cantidad; revisa la disponibilidad.",
-      "Iniciar: el sistema reserva los bultos que vencen primero (FEFO).",
-      "Completar: registra lo realmente consumido y las unidades buenas. Se crea el lote en cuarentena y se empaca en cajas con serial.",
-      "Control de calidad: libera o rechaza el lote con una nota. Solo los lotes liberados se pueden despachar.",
-    ],
-  },
-  {
-    t: "Contar (conteo cíclico)",
-    steps: [
-      "Conteo cíclico → elige la bodega; el sistema marca lo que toca contar según su clase ABC.",
-      "Escanea cada bulto con la pistola o la cámara. Las cajas selladas se confirman con un escaneo; las abiertas se cuentan y se digitan.",
-      "Mientras cuentas no ves la cantidad del sistema (así no te influye).",
-      "Cierra el conteo, revisa sistema vs contado y aprueba: se crean los ajustes sobre cada serial.",
-    ],
-  },
-  {
-    t: "Despachar",
-    steps: [
-      "Despachos → Nuevo: cliente, NIT, dirección y productos. Se asigna la remisión REM.",
-      "Alistar: el sistema asigna cajas por FEFO (solo lotes liberados y con más de 90 días de vida útil).",
-      "Escanea cada caja para verificar; luego Despachar con transportadora y guía.",
-      "Imprime la remisión, y cuando llegue adjunta la remisión firmada como prueba de entrega.",
-    ],
-  },
 ];
 
 const glossary: [string, string][] = [
@@ -96,9 +58,9 @@ export default function Help() {
       </Card>
 
       <div className="mt-6 grid gap-6 md:grid-cols-2">
-        {guides.map((g) => (
-          <Card key={g.t}>
-            <CardHeader title={g.t} />
+        {HELP_TOPICS.map((g) => (
+          <Card key={g.title}>
+            <CardHeader title={g.title} actions={<Link className="text-sm text-primary hover:underline" href={g.href}>Ir</Link>} />
             <CardBody>
               <ol className="list-decimal space-y-1.5 pl-5 text-sm">{g.steps.map((s, i) => <li key={i}>{s}</li>)}</ol>
             </CardBody>

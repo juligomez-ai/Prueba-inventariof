@@ -8,6 +8,8 @@
 | Video (máx. 8 min) | _pendiente: URL del video_ |
 | Repositorio | este repositorio |
 
+**Estado:** la Fase 1 está construida y probada (ver [§13](#13-qué-incluye-el-demo-y-qué-queda-para-después) y [§17](#17-recorrido-sugerido-del-demo)). Falta desplegarla en Vercel con la base de Supabase ([§16](#16-ejecución-local-y-despliegue)).
+
 ---
 
 ## Índice
@@ -28,6 +30,7 @@
 14. [Métricas de éxito](#14-métricas-de-éxito)
 15. [Riesgos y preguntas abiertas](#15-riesgos-y-preguntas-abiertas)
 16. [Ejecución local y despliegue](#16-ejecución-local-y-despliegue)
+17. [Recorrido sugerido del demo](#17-recorrido-sugerido-del-demo)
 
 ---
 
@@ -394,7 +397,7 @@ Convenciones: **RF** = requerimiento funcional · **RN** = regla de negocio · *
 | RF-6.8 | Exportar OC a PDF para enviar al proveedor |
 | RN-6.1 | El costo que entra al inventario es el precio unitario **sin IVA** convertido a la unidad base |
 | RN-6.2 | Solo una OC en `ENVIADA` o posterior suma al stock "en tránsito / por llegar" |
-| CA-6.1 | Al recibir 3 kg de karité de la OC-0007, el stock sube 3 kg, aparece el lote en BOD-MP y el Kardex muestra el nuevo costo promedio |
+| CA-6.1 | Al recibir 3 kg de karité de la OC-0001, el stock sube 3 kg, aparece el lote en BOD-MP y el Kardex muestra el nuevo costo promedio |
 
 ### M7 · Tracking de envíos entrantes
 
@@ -656,7 +659,7 @@ sequenceDiagram
 | Evento | Cantidad | Costo unit. | Valor | Saldo cant. | Saldo valor | **Costo promedio** |
 |---|---|---|---|---|---|---|
 | Saldo inicial karité | 2 kg | $57.000 | $114.000 | 2 kg | $114.000 | $57.000 |
-| Compra OC-0007 (sin IVA) | 3 kg | $62.000 | $186.000 | 5 kg | $300.000 | **$60.000** |
+| Compra OC-0001 (sin IVA) | 3 kg | $62.000 | $186.000 | 5 kg | $300.000 | **$60.000** |
 | Consumo OP-0001 | −0,8 kg | $60.000 | −$48.000 | 4,2 kg | $252.000 | $60.000 (no cambia) |
 
 ### 9.2 Costo de una orden de producción
@@ -699,9 +702,10 @@ Receta "Crema hidratante de karité 50 g", lote estándar = 100 unidades (5 kg d
 | Proponer una senda de ventas a partir del histórico (Fase 2) | Reemplazar la aprobación humana |
 
 ### Modelo y proveedor
-- **Google Gemini** (`gemini-2.5-flash`) a través de **Vercel AI SDK** (`@ai-sdk/google`).
-- Razones: buena relación costo/latencia, soporte nativo de *tool calling* y salida estructurada, buen desempeño en español, y capa gratuita suficiente para el demo.
-- Variable de entorno: `GOOGLE_GENERATIVE_AI_API_KEY`.
+- **Google Gemini** con el SDK oficial `@google/genai` y *function calling*.
+- Cadena de modelos con respaldo: `gemini-3.5-flash` → `gemini-flash-latest` → `gemini-3.5-flash-lite`. Si un modelo está saturado (503), sin cupo (429) o ya no existe (404), se usa el siguiente. `GEMINI_MODEL` permite fijar otro primero.
+- Razones: buena relación costo/latencia, soporte nativo de llamadas a herramientas, buen desempeño en español y capa gratuita suficiente para el demo.
+- Variable de entorno: `GEMINI_API_KEY` (Google AI Studio).
 
 ### Arquitectura: herramientas, no adivinanzas
 
@@ -709,28 +713,29 @@ Receta "Crema hidratante de karité 50 g", lote estándar = 100 unidades (5 kg d
 flowchart LR
   U[Usuario] --> CHAT[Chat del copiloto]
   CHAT --> LLM[Gemini<br/>tool calling]
-  LLM -->|llama| T1[checkFeasibility]
-  LLM -->|llama| T2[getStock / getLots]
-  LLM -->|llama| T3[getInventoryValue]
-  LLM -->|llama| T4[draftProductionOrder]
-  LLM -->|llama| T5[draftPurchaseOrder]
-  LLM -->|llama| T6[parseRecipe → borrador]
-  LLM -->|llama| T7[searchHelp]
+  LLM -->|llama| T1[buscar_producto<br/>verificar_factibilidad]
+  LLM -->|llama| T2[consultar_existencias<br/>lotes_por_vencer]
+  LLM -->|llama| T3[valor_inventario<br/>consultar_alertas<br/>consultar_formula]
+  LLM -->|llama| T4[proponer_orden_produccion]
+  LLM -->|llama| T5[proponer_orden_compra]
+  LLM -->|llama| T6[proponer_formula]
+  LLM -->|llama| T7[ayuda_uso]
   T1 & T2 & T3 & T4 & T5 & T6 & T7 --> UC[Casos de uso<br/>capa application]
   UC --> DB[(Base de datos)]
   LLM --> RESP[Respuesta + tarjeta de acción<br/>'Crear OP' / 'Crear OC']
   RESP --> U
 ```
 
-- Cada herramienta llama a los **mismos casos de uso** que la interfaz (`ValidateProductionFeasibilityUseCase`, etc.). La IA no tiene acceso directo a la base de datos.
-- Las herramientas que escriben solo crean documentos en estado **borrador**.
+- Cada herramienta llama a los **mismos casos de uso** que la interfaz (`checkFeasibility`, `recipeCost`, `inventoryRows`…). La IA no tiene acceso directo a la base de datos.
+- Las herramientas `proponer_*` **no escriben nada**: devuelven una propuesta. Solo al confirmarla se crea el documento en **borrador**, marcado como "Creado con Copiloto IA".
 - La respuesta incluye una **tarjeta de acción** con los datos: el usuario confirma con un clic.
 - Si el modelo no identifica el producto con certeza, pregunta ("¿Te refieres a la crema de karité 50 g o la de 100 g?").
 
 ### Ejemplos
-- *"¿Me alcanza el inventario para 250 cremas de karité?"* → "Puedes producir máximo 140: el límite son los frascos (tienes 140, necesitas 250). Te faltan 110 frascos, 110 tapas y 110 etiquetas. [Crear OC con faltantes] [Crear OP por 140]".
-- *"Para 100 bálsamos uso 400 g de cera de abejas, 300 g de manteca de cacao, 280 ml de aceite de coco, 20 ml de vitamina E y 100 tubos"* → borrador de receta con las 5 líneas mapeadas a productos del catálogo (y aviso si alguno no existe: "¿Creo 'Manteca de cacao' como insumo?").
-- *"¿Qué lotes vencen en los próximos 60 días?"* → tabla de lotes.
+- *"¿Me alcanza el inventario para 250 cremas de karité?"* → "Puedes producir máximo 140. Faltan 110 frascos, 110 tapas y 110 etiquetas." + tarjeta de orden de producción + una orden de compra por proveedor (envases y etiquetas).
+- *"Para 100 bálsamos uso 400 g de cera de abejas, 300 g de manteca de cacao, 280 ml de aceite de coco, 20 ml de vitamina E y 100 tubos"* → propuesta de fórmula con cada línea mapeada a su SKU y convertida a la unidad base (400 g → 0,4 kg), con costo por lote ($104.140) y por unidad. Si un insumo no existe, pide crearlo en Productos.
+- *"¿Qué lotes vencen en los próximos 60 días?"* → lista de lotes con días restantes.
+- *"¿Cómo registro la llegada de una compra?"* → pasos del centro de ayuda.
 
 ---
 
@@ -792,56 +797,50 @@ erDiagram
 
 | Capa | Tecnología |
 |---|---|
-| Fullstack | Next.js (App Router) + TypeScript |
-| UI | Tailwind CSS + shadcn/ui |
-| Datos | Prisma ORM · PostgreSQL en el despliegue (SQLite en local) |
-| IA | Vercel AI SDK + Google Gemini (`@ai-sdk/google`) |
-| Escáner | Lectura de cámara en navegador (librería de códigos de barras en JS) + entrada tipo teclado para pistolas USB/Bluetooth |
-| Etiquetas | Generación de Code 128 y PDF de 50 × 25 mm en el servidor |
-| Despliegue | Vercel |
-
-> En Vercel el sistema de archivos es efímero, así que SQLite no persiste datos. Por eso el demo desplegado usa PostgreSQL gestionado.
+| Fullstack | Next.js 16 (App Router, Server Actions) + TypeScript + React 19 |
+| UI | Tailwind CSS 4 con componentes propios al estilo shadcn/ui · íconos lucide-react |
+| Datos | Prisma 6 + PostgreSQL (Supabase en el despliegue; Postgres local en desarrollo) |
+| IA | Google Gemini con `@google/genai` (function calling) |
+| Escáner | Cámara del navegador con ZXing (`@zxing/browser`) + pistola USB/Bluetooth en modo teclado |
+| Etiquetas y remisión | Code 128 con `bwip-js` y PDF con `pdf-lib`, generados en el servidor |
+| Pruebas | Vitest (reglas de dominio) + verificación de datos (`npm run check:seed`) + recorrido de punta a punta con Playwright |
+| Despliegue | Vercel (región São Paulo, junto a la base de Supabase) |
 
 ### Clean Architecture / DDD pragmático
 
 ```text
 src/
-├── app/                         # Presentación (Next.js)
-│   ├── (dashboard)/
-│   │   ├── page.tsx             # Tablero (M15)
-│   │   ├── products/            # M1
-│   │   ├── warehouses/          # M2
-│   │   ├── inventory/           # M3, M5 (existencias, kardex, lotes)
-│   │   ├── costs/               # M4
-│   │   ├── purchasing/          # M6, M7
-│   │   ├── recipes/             # M8
-│   │   ├── production/          # M9
-│   │   ├── counts/              # M10
-│   │   ├── adjustments/         # M11
-│   │   ├── dispatches/          # M12
-│   │   └── help/                # M14
-│   └── api/copilot/             # M13 (streaming)
-├── domain/
-│   ├── entities/                # Product, Lot, Recipe, ProductionOrder, StockMovement…
-│   ├── value-objects/           # Quantity, Unit, Money, LotCode, OrderStatus
-│   ├── services/                # WeightedAverageCost, FefoAllocator, RequirementsCalculator
-│   └── repositories/            # Interfaces
-├── application/use-cases/
-│   ├── ValidateProductionFeasibilityUseCase.ts
-│   ├── StartProductionOrderUseCase.ts
-│   ├── CompleteProductionOrderUseCase.ts
-│   ├── ReceivePurchaseOrderUseCase.ts
-│   ├── ApproveCycleCountUseCase.ts
-│   └── ShipDispatchUseCase.ts
+├── app/                          # Presentación (rutas en español)
+│   ├── page.tsx                  # Tablero y alertas (M15)
+│   ├── productos/                # M1
+│   ├── bodegas/                  # M2 (bodegas y traslados)
+│   ├── existencias/, kardex/     # M3 (+ detalle de movimiento y CSV)
+│   ├── lotes/, calidad/          # M5 (trazabilidad, cuarentena y liberación)
+│   ├── etiquetas/                # M5.1
+│   ├── compras/, proveedores/    # M6
+│   ├── envios/                   # M7 / M12 (seguimiento)
+│   ├── formulas/                 # M8
+│   ├── produccion/               # M9
+│   ├── conteos/                  # M10 (escáner)
+│   ├── ajustes/                  # M11
+│   ├── despachos/                # M12 (remisión, alistamiento, POD)
+│   ├── copiloto/                 # M13
+│   ├── ayuda/                    # M14
+│   ├── actions.ts                # Server Actions → casos de uso
+│   └── api/                      # copilot, etiquetas (PDF), remision/[id] (PDF)
+├── domain/services/              # Reglas puras: costo promedio, FEFO, requerimientos, ABC, seriales, unidades
+├── application/use-cases/        # catalog, purchasing, production, inventory, dispatches, insights, traceability
 ├── infrastructure/
-│   ├── database/                # Prisma + repositorios
-│   └── ai/                      # Prompts, herramientas, cliente Gemini
-└── shared/
+│   ├── database/                 # Prisma, transacciones y stock.ts (único punto que mueve inventario)
+│   ├── ai/                       # Copiloto: bucle con Gemini y herramientas
+│   └── pdf/                      # Etiquetas térmicas y remisión
+└── shared/                       # Formatos, etiquetas en español, errores, ayuda
 ```
 
 **Decisiones clave**
-- Las reglas de costo (promedio ponderado) y asignación FEFO viven en **servicios de dominio puros**, testeables sin base de datos.
-- Todo movimiento de stock pasa por un único servicio que, dentro de una transacción, inserta el movimiento, actualiza `StockLevel` y recalcula el costo. Así se garantiza que el Kardex y el saldo nunca se desalinean.
+- Las reglas de costo (promedio ponderado), FEFO, requerimientos de fórmula y ABC viven en **servicios de dominio puros**, probados sin base de datos.
+- **Todo el stock vive en bultos serializados.** El saldo de un producto es la suma de sus bultos, y cada movimiento del Kardex apunta a un bulto. Todo cambio pasa por `infrastructure/database/stock.ts`, dentro de una transacción serializable: crea el movimiento, ajusta el bulto y recalcula el costo. Así el Kardex y los bultos nunca se desalinean (`npm run check:seed` lo verifica).
+- La IA usa los mismos casos de uso que la interfaz: no hay una "segunda lógica" para el Copiloto.
 
 ---
 
@@ -908,20 +907,73 @@ Catálogo, bodegas y traslados, existencias y Kardex, costo promedio ponderado y
 
 ## 16. Ejecución local y despliegue
 
-> Se completará cuando el código esté en el repositorio.
+### Requisitos
+- Node.js 20 o superior
+- PostgreSQL (local o Supabase)
+- Una API key de Gemini (Google AI Studio) para el Copiloto
+
+### Local
 
 ```bash
 npm install
 ```
 
 ```bash
-cp .env.example .env   # DATABASE_URL, GOOGLE_GENERATIVE_AI_API_KEY
+cp .env.example .env
+```
+
+Edita `.env`: pon en `DATABASE_URL` y `DIRECT_URL` la misma cadena de tu Postgres local, y tu `GEMINI_API_KEY`.
+
+```bash
+npx prisma migrate deploy
 ```
 
 ```bash
-npx prisma migrate dev && npx prisma db seed
+npm run db:seed
 ```
 
 ```bash
 npm run dev
 ```
+
+Abre http://localhost:3000. Otros comandos:
+
+```bash
+npm test
+```
+
+```bash
+npm run check:seed
+```
+
+```bash
+npm run db:reset
+```
+
+`npm test` corre las pruebas de reglas de negocio, `npm run check:seed` verifica que los números cuadren con este README y que el Kardex cuadre con los bultos, y `npm run db:reset` borra todo y vuelve a cargar los datos de ejemplo (solo para desarrollo).
+
+### Despliegue en Vercel + Supabase
+
+1. En Supabase, en el botón **Connect** del proyecto, copia las cadenas *Transaction pooler* (puerto 6543) y *Session pooler* (puerto 5432). En las dos, reemplaza `[YOUR-PASSWORD]` por la contraseña de la base de datos.
+2. En Vercel, importa este repositorio y crea estas variables de entorno:
+   - `DATABASE_URL`: la cadena del puerto 6543 terminada en `?pgbouncer=true&connection_limit=1`
+   - `DIRECT_URL`: la cadena del puerto 5432
+   - `GEMINI_API_KEY`: tu clave de Gemini
+3. Despliega. El comando `vercel-build` aplica las migraciones (`prisma migrate deploy`), carga los datos de ejemplo **solo si la base está vacía** y compila. Las tablas y los datos de Botánica Viva se crean solos en el primer despliegue.
+4. `vercel.json` ubica las funciones en São Paulo (`gru1`), la misma región de la base de Supabase.
+
+> Las direcciones de rastreo de las transportadoras de los datos de ejemplo se pueden editar en **Proveedores y transportadoras**. Conviene verificarlas antes de la demo, porque las páginas de las transportadoras cambian.
+
+---
+
+## 17. Recorrido sugerido del demo
+
+1. **Tablero:** valor del inventario, alertas (glicerina por vencer, OC de envases retrasada, jabón en cuarentena) y "Por llegar".
+2. **Copiloto:** "Quiero producir 250 cremas de karité, ¿me alcanza el inventario?" → máximo 140, faltan 110 frascos, tapas y etiquetas → confirmar la orden y las compras.
+3. **Fórmulas:** la crema cuesta $2.920 por unidad y el empaque es casi el 60% del costo.
+4. **Producción:** crear una orden de 100 cremas → iniciar (reserva FEFO) → completar con 98 buenas en cajas de 24 → el lote queda en cuarentena con sus seriales y etiquetas.
+5. **Control de calidad:** liberar el lote con una nota.
+6. **Despachos:** REM-0002 → alistar → escanear cada caja → despachar con guía → descargar la remisión PDF.
+7. **Compras:** recibir la OC-0002 con la remisión del proveedor; ver cómo cambia el costo promedio en el Kardex.
+8. **Conteo cíclico:** escanear una caja sellada (un escaneo) y una abierta (pide contar, sin mostrar el sistema) → cerrar → revisar → aprobar el ajuste.
+9. **Trazabilidad:** desde el lote del bálsamo, ver los lotes de insumos usados y el cliente al que llegó.

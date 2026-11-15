@@ -349,8 +349,10 @@ export async function createCountAction(_: ActionResult | null, fd: FormData) {
 export async function scanCountAction(input: { countId: string; code: string; countedQty?: number | null; sealIntact?: boolean; comment?: string | null }) {
   try {
     const r = await inv.recordScan(input);
-    if (!r.needsQuantity) revalidatePath(`/conteos/${input.countId}`);
-    return { ok: true as const, result: r };
+    if (r.needsQuantity) return { ok: true as const, result: r };
+    revalidatePath(`/conteos/${input.countId}`);
+    // Solo datos simples al cliente (sin Decimal) y sin la cantidad del sistema (RF-10.3)
+    return { ok: true as const, result: { needsQuantity: false as const, serial: r.serial, productName: r.productName, sealed: r.sealed } };
   } catch (e) {
     return { ok: false as const, error: errorMessage(e) };
   }
@@ -434,5 +436,34 @@ export async function attachProofAction(_: ActionResult | null, fd: FormData) {
     const buf = Buffer.from(await file.arrayBuffer());
     await dispatches.attachProof(str(fd, "id"), `data:${file.type || "application/octet-stream"};base64,${buf.toString("base64")}`);
     return { message: "Remisión firmada adjunta (prueba de entrega)." };
+  });
+}
+
+// ───────────────────────── Confirmación de propuestas del Copiloto (RN-13.1) ─────────────────────────
+
+export async function confirmOrderProposalAction(p: { productId: string; quantity: number; plannedDate: string | null; notes: string | null }) {
+  return run(async () => {
+    const o = await production.createProductionOrder({
+      productId: p.productId,
+      quantity: p.quantity,
+      plannedDate: p.plannedDate ? new Date(`${p.plannedDate}T12:00:00-05:00`) : null,
+      notes: p.notes,
+      createdByAI: true,
+    });
+    return { message: `Orden ${o.code} creada en borrador.`, redirect: `/produccion/${o.id}` };
+  });
+}
+
+export async function confirmPurchaseProposalAction(p: { supplierId: string; notes: string | null; lines: { productId: string; quantity: number; unit: string; unitPrice: number }[] }) {
+  return run(async () => {
+    const po = await purchasing.createPurchaseOrder({ supplierId: p.supplierId, notes: p.notes, lines: p.lines, createdByAI: true });
+    return { message: `Orden de compra ${po.code} creada en borrador.`, redirect: `/compras/${po.id}` };
+  });
+}
+
+export async function confirmRecipeProposalAction(p: { productId: string; name: string; yieldQuantity: number; items: { ingredientId: string; quantity: number; unit: string }[] }) {
+  return run(async () => {
+    const r = await production.saveRecipe({ ...p, createdByAI: true });
+    return { message: "Fórmula guardada.", redirect: `/formulas/${r.productId}` };
   });
 }
