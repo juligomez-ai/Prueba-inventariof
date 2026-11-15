@@ -266,26 +266,44 @@ Convenciones: **RF** = requerimiento funcional · **RN** = regla de negocio · *
 
 | ID | Requerimiento |
 |---|---|
-| RF-3.1 | Vista de existencias por producto con desglose por bodega y lote: físico, reservado, en cuarentena, disponible, en tránsito, valor |
-| RF-3.2 | Kardex por producto: fecha, tipo de movimiento, documento de referencia (OC-, OP-, DSP-, AJ-, CC-), bodega, lote, entrada, salida, saldo, costo unitario, costo promedio resultante, valor del saldo |
-| RF-3.3 | Filtros por fecha, bodega, lote, tipo de movimiento; exportar a CSV/Excel |
+| RF-3.1 | Vista de existencias por producto con desglose por bodega, lote y bulto (serial): físico, reservado, en cuarentena, disponible, en tránsito, valor. **Desde cualquier saldo se llega en un clic a los movimientos que lo explican** y de ahí al documento que los originó |
+| RF-3.2 | Kardex por producto: fecha y hora, tipo de movimiento (nombre y sigla), documento soporte (OC, OP, REM, AJ, CC, TR), **número de remisión** (remisión de entrega en las salidas a clientes; remisión del proveedor en las entradas por compra), tercero (proveedor o cliente), bodega, lote, serial, entrada, salida, saldo, costo unitario, costo promedio resultante, valor del saldo y usuario |
+| RF-3.3 | Filtros por fecha, bodega, lote, serial, tipo de movimiento, documento, remisión y tercero; exportar a CSV/Excel |
 | RF-3.4 | Semáforo de stock: rojo (≤ seguridad), amarillo (≤ mínimo), verde |
-| RN-3.1 | **Los movimientos son inmutables.** Un error se corrige con un movimiento inverso (ajuste o reverso), nunca editando |
+| RF-3.5 | **Trazabilidad completa de cada movimiento.** Cada movimiento registra siempre: consecutivo, fecha y hora, usuario, tipo, documento soporte (tipo, número y enlace), remisión cuando aplica, tercero, producto, lote, serial(es), bodega origen y destino, cantidad y unidad, costo unitario, costo promedio y saldo **antes y después**, motivo y movimiento relacionado (la otra mitad de un traslado o el movimiento que se reversa) |
+| RF-3.6 | Vista de detalle de movimiento con toda su cadena: documento soporte → lote → bultos → movimientos anteriores y posteriores del mismo lote |
+| RN-3.1 | **Los movimientos son inmutables.** Un error se corrige con un movimiento inverso (ajuste o reverso) que referencia al original, nunca editando ni borrando |
 | RN-3.2 | Todo cambio de stock ocurre **solo** a través de un movimiento; no existe "editar stock" directo |
 | RN-3.3 | Por defecto no se permite stock negativo (configurable a futuro) |
+| RN-3.4 | **No existe un movimiento sin documento soporte.** Si un dato obligatorio de trazabilidad falta (lote en un producto que lo controla, remisión en una salida a cliente, motivo en un ajuste), el movimiento no se guarda |
+| CA-3.1 | Desde el saldo de 112 cremas se abre el Kardex; al hacer clic en la salida de 24 u se ve la remisión REM-0003, el cliente, el lote, los seriales de las cajas, la guía y quién la registró |
 
-**Tipos de movimiento** (amplía el borrador inicial):
+**Tipos de movimiento.** Se muestran en español, con la sigla internacional de logística entre paréntesis. Así el usuario los entiende y el equipo técnico, los proveedores y las integraciones hablan el mismo idioma.
 
-| Tipo | Signo | Origen |
+| Código | Movimiento | Sigla internacional | Significado de la sigla | Signo | Documento soporte |
+|---|---|---|---|---|---|
+| `ENT_COMPRA` | Entrada por compra | **GR** | Goods Receipt | + | OC + remisión del proveedor |
+| `ENT_PRODUCCION` | Entrada por producción | **FGR** | Finished Goods Receipt | + | OP |
+| `SAL_CONSUMO` | Consumo de producción | **MI** | Material Issue | − | OP |
+| `SAL_VENTA` | Salida por venta (despacho) | **GI** | Goods Issue | − | REM (remisión de entrega) |
+| `TRASLADO_SAL` / `TRASLADO_ENT` | Traslado entre bodegas | **STO** | Stock Transfer Order | − / + | TR |
+| `AJUSTE_ENT` / `AJUSTE_SAL` | Ajuste de inventario (manual o por conteo) | **ADJ** | Inventory Adjustment | + / − | AJ o CC |
+| `BAJA` | Baja por merma, vencimiento o daño | **SCR** | Scrap / Write-off | − | AJ |
+| `INV_INICIAL` | Inventario inicial | **OB** | Opening Balance | + | AJ |
+| `DEV_CLIENTE` | Devolución de cliente (Fase 2) | **RMA** | Return Merchandise Authorization | + | REM original |
+| `DEV_PROVEEDOR` | Devolución a proveedor (Fase 2) | **RTV** | Return to Vendor | − | OC original |
+
+**Documentos soporte.**
+
+| Sigla | Documento | Sigla internacional |
 |---|---|---|
-| `IN_PURCHASE` | + | Recepción de orden de compra |
-| `IN_PRODUCTION` | + | Producto terminado de una OP |
-| `OUT_PRODUCTION` | − | Consumo de insumos en una OP |
-| `OUT_SALE` | − | Despacho a cliente |
-| `IN_ADJUSTMENT` / `OUT_ADJUSTMENT` | ± | Ajuste manual o por conteo |
-| `TRANSFER_OUT` / `TRANSFER_IN` | ± | Traslado entre bodegas |
-| `OUT_SCRAP` | − | Merma, vencido, dañado |
-| `IN_RETURN` | + | Devolución de cliente (Fase 2) |
+| OC | Orden de compra | PO (Purchase Order) |
+| OP | Orden de producción | MO (Manufacturing Order) |
+| REM | Remisión de entrega (despacho a cliente) | DN (Delivery Note) |
+| — | Remisión del proveedor (se registra su número al recibir) | ASN / DN del proveedor |
+| AJ | Ajuste de inventario | ADJ |
+| CC | Conteo cíclico | CC (Cycle Count) |
+| TR | Traslado | STO (Stock Transfer Order) |
 
 ### M4 · Costos y valorización
 
@@ -318,7 +336,7 @@ Convenciones: **RF** = requerimiento funcional · **RN** = regla de negocio · *
 | RF-5.5 | **Trazabilidad hacia adelante:** desde un lote de insumo, ver en qué lotes de producto terminado se usó y a qué clientes se despachó |
 | RF-5.6 | Alertas: lotes que vencen en ≤ 30/60/90 días; lotes vencidos bloqueados para consumo y despacho |
 | RF-5.7 | Estado del lote: `AVAILABLE`, `QUARANTINE`, `BLOCKED`, `EXPIRED` |
-| RN-5.1 | Un lote vencido no se puede consumir ni despachar; solo dar de baja (`OUT_SCRAP`) |
+| RN-5.1 | Un lote vencido no se puede consumir ni despachar; solo dar de baja (`BAJA` · SCR) |
 | RN-5.2 | El vencimiento del producto terminado no puede ser posterior al vencimiento más próximo de sus insumos (alerta; no bloqueo en MVP) |
 | CA-5.1 | Ante un reclamo del lote `PT001-261114-01`, en 2 clics se ve el lote de karité usado y su proveedor |
 
@@ -361,7 +379,7 @@ Convenciones: **RF** = requerimiento funcional · **RN** = regla de negocio · *
 | RF-6.2 | Lista de precios por proveedor y producto (último precio pagado se actualiza solo) |
 | RF-6.3 | Orden de compra: proveedor, fecha, fecha esperada, líneas (producto, cantidad, unidad de compra, precio unitario, IVA), total |
 | RF-6.4 | Estados: `DRAFT` → `SENT` → `IN_TRANSIT` → `PARTIALLY_RECEIVED` → `RECEIVED` / `CANCELLED` |
-| RF-6.5 | Recepción total o parcial: cantidad recibida, lote, vencimiento, bodega destino y número de bultos (genera seriales y etiquetas, M5.1). Genera `IN_PURCHASE` y recalcula costo promedio |
+| RF-6.5 | Recepción total o parcial: cantidad recibida, lote, vencimiento, bodega destino, número de bultos (genera seriales y etiquetas, M5.1) y **número de remisión del proveedor** (obligatorio). Genera `ENT_COMPRA` (GR) y recalcula costo promedio |
 | RF-6.6 | Diferencias en recepción (pedí 10, llegaron 9) quedan registradas en la OC |
 | RF-6.7 | Crear OC desde la sugerencia de faltantes de una OP o desde el copiloto (prellenada) |
 | RF-6.8 | Exportar OC a PDF para enviar al proveedor |
@@ -429,7 +447,7 @@ stateDiagram-v2
 | RF-9.4 | Si hay faltantes: botón "Crear orden de compra" con los faltantes prellenados (RF-6.7) |
 | RF-9.5 | Al **iniciar**: reserva lotes con FEFO (editable). El stock reservado deja de estar disponible para otras OPs y despachos |
 | RF-9.6 | Al **completar**: registrar consumo real por insumo y lote (por defecto = teórico), unidades buenas producidas, lote resultante, vencimiento y empaque en cajas (genera seriales y etiquetas, M5.1) |
-| RF-9.7 | Completar es **atómico** (una transacción): salidas `OUT_PRODUCTION` de cada insumo + entrada `IN_PRODUCTION` del terminado con su costo real. Si algo falla, no se aplica nada |
+| RF-9.7 | Completar es **atómico** (una transacción): salidas `SAL_CONSUMO` (MI) de cada insumo + entrada `ENT_PRODUCCION` (FGR) del terminado con su costo real. Si algo falla, no se aplica nada |
 | RF-9.8 | Resumen de cierre: costo teórico vs real, rendimiento (producido ÷ planeado), variación por insumo |
 | RF-9.10 | Imprimir orden (hoja de trabajo para la operaria) con fórmula, cantidades y lotes asignados |
 | RN-9.1 | No se puede iniciar una OP sin stock disponible suficiente (en el MVP no se permite producción parcial con faltantes) |
@@ -449,7 +467,7 @@ flowchart LR
   C --> D[Cerrar conteo]
   D --> E[Revisar diferencias<br/>contado vs sistema]
   E --> F[Aprobar]
-  F --> G[Ajustes automáticos<br/>IN/OUT_ADJUSTMENT]
+  F --> G[Ajustes automáticos<br/>AJUSTE_ENT / AJUSTE_SAL (ADJ)]
 ```
 
 | ID | Requerimiento |
@@ -464,7 +482,7 @@ flowchart LR
 | RF-10.8 | Aprobación del conteo: genera ajustes con motivo "Conteo cíclico CC-0001" |
 | RN-10.1 | Mientras una sesión está abierta, los movimientos de esos ítems se registran y se tienen en cuenta en la diferencia (se compara contra el stock al momento del escaneo) |
 | RN-10.2 | Diferencias que superen un umbral de valor (configurable) requieren comentario |
-| CA-10.1 | Escanear 48 frascos cuando el sistema tiene 50 muestra diferencia de −2 ($2.400) y, al aprobar, crea `OUT_ADJUSTMENT` de 2 |
+| CA-10.1 | Escanear 48 frascos cuando el sistema tiene 50 muestra diferencia de −2 ($2.400) y, al aprobar, crea `AJUSTE_SAL` (ADJ) de 2 con documento CC |
 
 ### M11 · Ajustes de inventario
 
@@ -474,7 +492,7 @@ flowchart LR
 | RF-11.2 | Motivos: merma de proceso, producto dañado, vencido, muestra/obsequio, error de registro, inventario inicial, conteo |
 | RF-11.3 | Ajuste positivo pide costo unitario (por defecto, el promedio vigente) |
 | RF-11.4 | Reporte de ajustes por motivo y valor (pérdidas del período) |
-| RN-11.1 | Los vencidos y dañados salen como `OUT_SCRAP` para medir pérdidas por separado |
+| RN-11.1 | Los vencidos y dañados salen como `BAJA` (SCR) para medir pérdidas por separado |
 
 ### M12 · Despachos y tracking saliente
 
@@ -486,11 +504,14 @@ flowchart LR
 | RF-12.2 | Asignación de lotes FEFO al alistar; lista de alistamiento (picking) con verificación escaneando el serial de cada caja (M5.1) |
 | RF-12.3 | Estados: `PENDING` → `PICKING` → `SHIPPED` → `IN_TRANSIT` → `DELIVERED` / `INCIDENT` / `RETURNED` |
 | RF-12.4 | Datos de envío: transportadora, número de guía, costo del flete, fecha de despacho, ETA |
-| RF-12.5 | Al pasar a `SHIPPED`: genera `OUT_SALE` por lote, valorizado al costo promedio |
+| RF-12.5 | Al pasar a `SHIPPED`: genera la **remisión de entrega** `REM-0001` y una salida `SAL_VENTA` (GI) por lote, valorizada al costo promedio. Cada movimiento queda con el número de remisión |
+| RF-12.5b | **Remisión de entrega en PDF**: número, fecha, datos del cliente (razón social, NIT, dirección, ciudad), referencia del pedido o factura, productos con cantidad, lote, vencimiento y seriales de las cajas, transportadora, número de guía y espacio para nombre, firma, cédula y fecha de quien recibe |
+| RF-12.5c | Al pasar a `DELIVERED`: adjuntar la **remisión firmada** (foto o PDF) como prueba de entrega (POD, *Proof of Delivery*) |
+| RN-12.2 | La remisión acompaña la mercancía y **no reemplaza la factura electrónica**, que sigue emitiéndose en el módulo de ventas de SYNTHEX |
 | RF-12.6 | Línea de tiempo de eventos de tracking (manual en MVP) y enlace a la página oficial de rastreo (RF-7.3b) |
 | RF-12.7 | Tablero de despachos: pendientes, en tránsito, con novedad, entregados |
 | RN-12.1 | No se despachan lotes vencidos, en cuarentena ni con vencimiento menor a X días (configurable, por defecto 90) |
-| CA-12.1 | El despacho DSP-0003 de 24 cremas descuenta del lote más próximo a vencer y la trazabilidad del lote muestra al cliente |
+| CA-12.1 | El despacho REM-0003 de 24 cremas descuenta del lote más próximo a vencer y la trazabilidad del lote muestra al cliente |
 
 ### M13 · Copiloto IA
 
@@ -535,7 +556,7 @@ Detalle completo en la [sección 10](#10-copiloto-ia).
 **Objetivo:** pasar de "comprar cuando se acaba" a **saber con anticipación** si el stock de cada ítem alcanza según la senda de ventas.
 
 **Flujo:**
-1. **Histórico:** ventas mensuales por producto terminado (de `OUT_SALE` y del módulo de ventas existente), mínimo 6 meses; con menos se avisa que la confianza es baja.
+1. **Histórico:** ventas mensuales por producto terminado (de `SAL_VENTA` y del módulo de ventas existente), mínimo 6 meses; con menos se avisa que la confianza es baja.
 2. **Pronóstico con IA:** el modelo recibe la serie histórica y propone una **senda de ventas** a 3–6 meses (tendencia, estacionalidad como temporadas de regalo, y un % de crecimiento explícito), con una explicación en texto. El usuario puede **ajustar** cada mes o el % de crecimiento, y queda registrada la versión aprobada.
 3. **Explosión de necesidades:** demanda de PT → unidades a producir → insumos requeridos por mes (usando las fórmulas).
 4. **Cálculos por ítem:**
@@ -575,7 +596,7 @@ Requerimientos: permisos por acción, aprobación de ajustes sobre un umbral, bi
 Esta es la pregunta central del reto. La respuesta: **la manufactura no tiene su propio stock; produce movimientos sobre el mismo inventario que SYNTHEX ya gestiona.**
 
 1. **Mismo catálogo:** los insumos y productos terminados son los mismos `Product` del inventario existente; solo se agrega el tipo y los atributos de control (lote, vencimiento).
-2. **Mismo Kardex:** consumir y producir son tipos de movimiento nuevos (`OUT_PRODUCTION`, `IN_PRODUCTION`) en el historial que el usuario ya conoce.
+2. **Mismo Kardex:** consumir y producir son tipos de movimiento nuevos (`SAL_CONSUMO` · MI y `ENT_PRODUCCION` · FGR) en el historial que el usuario ya conoce.
 3. **El costo fluye:** el costo promedio de los insumos se convierte en el costo del producto terminado, que luego se usa al venderlo.
 4. **Disponibilidad compartida:** una reserva de una OP reduce el disponible para despachos, y viceversa.
 
@@ -598,7 +619,7 @@ sequenceDiagram
   L->>OP: Inicia OP-0001
   OP->>INV: Reserva lotes FEFO
   L->>OP: Completa (100 buenas)
-  OP->>INV: Transacción atómica:<br/>OUT_PRODUCTION por cada insumo y lote<br/>IN_PRODUCTION +100 cremas, lote PT001-261114-01, costo $2.920,40
+  OP->>INV: Transacción atómica:<br/>SAL_CONSUMO (MI) por cada insumo y lote<br/>ENT_PRODUCCION (FGR) +100 cremas, lote PT001-261114-01, costo $2.920,40
   INV-->>L: Kardex y valor de inventario actualizados
 ```
 
@@ -606,10 +627,10 @@ sequenceDiagram
 
 | Producto | Antes | Movimiento | Después |
 |---|---|---|---|
-| Manteca de karité | 5,00 kg | `OUT_PRODUCTION` −0,80 kg (OP-0001) | 4,20 kg |
-| Frasco ámbar 50 g | 140 u | `OUT_PRODUCTION` −100 u | 40 u |
+| Manteca de karité | 5,00 kg | `SAL_CONSUMO` (MI) −0,80 kg (OP-0001) | 4,20 kg |
+| Frasco ámbar 50 g | 140 u | `SAL_CONSUMO` (MI) −100 u | 40 u |
 | … (8 líneas más) | | | |
-| Crema hidratante 50 g | 12 u | `IN_PRODUCTION` +100 u, lote PT001-261114-01 | 112 u |
+| Crema hidratante 50 g | 12 u | `ENT_PRODUCCION` (FGR) +100 u, lote PT001-261114-01 | 112 u |
 
 ---
 
@@ -737,16 +758,16 @@ erDiagram
 | `Lot` | productId, code, expiryDate, status, supplierLot, sourceType (PURCHASE/PRODUCTION), sourceRef |
 | `StockLevel` | productId, warehouseId, lotId, onHand, reserved |
 | `Container` (bulto) | serial (único), productId, lotId, warehouseId, initialQty, currentQty, status, sourceType, sourceRef |
-| `StockMovement` | productId, warehouseId, lotId, containerId, type, quantity (±), unitCost, avgCostAfter, balanceAfter, reference, reason, createdAt |
+| `StockMovement` | number, type (código en español), productId, warehouseId, toWarehouseId, lotId, containerId, quantity (±), unit, unitCost, avgCostBefore, avgCostAfter, balanceBefore, balanceAfter, documentType, documentId, documentNumber, remissionNumber, partyType (proveedor/cliente), partyId, reason, relatedMovementId, userId, createdAt |
 | `Recipe` (Fórmula) | productId (único en MVP), name, yieldQuantity, yieldUnit, instructions |
 | `RecipeItem` | recipeId, ingredientId, quantity, unit |
 | `ProductionOrder` | code, productId, recipeId, plannedQty, producedQty, status, outputLotId, theoreticalCost, actualCost, plannedDate, completedAt |
 | `ProductionConsumption` | orderId, productId, lotId, plannedQty, reservedQty, consumedQty, unitCost |
 | `Supplier` | taxId (NIT), name, contact, phone, email, city, paymentTermDays, leadTimeDays |
-| `PurchaseOrder` / `PurchaseOrderLine` | code, supplierId, status, expectedDate / productId, qty, unit, unitPrice, taxRate, receivedQty |
+| `PurchaseOrder` / `PurchaseOrderLine` | code, supplierId, status, expectedDate, supplierRemissionNumbers / productId, qty, unit, unitPrice, taxRate, receivedQty |
 | `Shipment` | direction (INBOUND/OUTBOUND), purchaseOrderId?, dispatchId?, carrier, trackingNumber, trackingUrl, shippedAt, eta, status |
 | `ShipmentEvent` | shipmentId, status, note, occurredAt |
-| `Dispatch` / `DispatchLine` | code, customerName, address, salesRef, status / productId, lotId, qty |
+| `Dispatch` / `DispatchLine` | remissionNumber (REM-), customerName, customerTaxId, address, city, salesRef, status, signedProofUrl / productId, lotId, containerId, qty |
 | `CycleCount` / `CycleCountLine` | code, warehouseId, status, isBlind / productId, lotId, systemQty, countedQty, difference |
 
 ---
