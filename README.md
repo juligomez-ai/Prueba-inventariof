@@ -145,6 +145,7 @@ Revisamos el enfoque de suites ERP con módulo de manufactura (p. ej. Odoo), her
 | **Lote estándar / rendimiento** | Cuántas unidades produce la receta (ej. 100 cremas) |
 | **Orden de producción (OP)** | Instrucción de fabricar X unidades de un producto con una receta |
 | **Lote (batch)** | Grupo de unidades con mismo origen y fecha; tiene código y vencimiento |
+| **Bulto / serial** | Recipiente físico (saco, garrafa, caja) con una etiqueta de código de barras única. Contiene un solo producto de un solo lote |
 | **FEFO** | *First Expired, First Out*: se usa primero lo que vence antes |
 | **Kardex** | Historial cronológico de entradas y salidas por producto, con costo |
 | **Costo promedio ponderado** | Costo unitario = valor total del inventario ÷ cantidad total |
@@ -206,6 +207,7 @@ flowchart LR
 | M3 | Existencias y Kardex | 1 | ✅ |
 | M4 | Costos y valorización | 1 | ✅ |
 | M5 | Lotes y vencimientos | 1 | ✅ |
+| M5.1 | Etiquetas con código de barras y seriales por bulto | 1 | ✅ |
 | M6 | Proveedores y órdenes de compra | 1 | ✅ |
 | M7 | Tracking de envíos entrantes | 1 | ✅ |
 | M8 | Fórmulas (receta / BOM) | 1 | ✅ |
@@ -239,7 +241,7 @@ Convenciones: **RF** = requerimiento funcional · **RN** = regla de negocio · *
 | RF-1.4 | Datos regulatorios del producto terminado: número de NSO INVIMA y su vencimiento |
 | RF-1.5 | Parámetros de inventario: stock mínimo, stock de seguridad, tiempo de reposición (días), proveedor preferido |
 | RF-1.6 | Precio de venta (lectura desde el catálogo existente de SYNTHEX) para calcular margen |
-| RF-1.7 | Generar e imprimir etiqueta con código de barras para ítems sin código del fabricante |
+| RF-1.7 | Etiquetas con código de barras por SKU y seriales por bulto: ver [M5.1](#m51--etiquetas-con-código-de-barras-y-seriales-por-bulto) |
 | RN-1.1 | El SKU y el código de barras son únicos por empresa |
 | RN-1.2 | No se puede eliminar un producto con movimientos; solo archivar |
 | RN-1.3 | La unidad base no se puede cambiar si el producto ya tiene movimientos |
@@ -320,6 +322,35 @@ Convenciones: **RF** = requerimiento funcional · **RN** = regla de negocio · *
 | RN-5.2 | El vencimiento del producto terminado no puede ser posterior al vencimiento más próximo de sus insumos (alerta; no bloqueo en MVP) |
 | CA-5.1 | Ante un reclamo del lote `PT001-261114-01`, en 2 clics se ve el lote de karité usado y su proveedor |
 
+### M5.1 · Etiquetas con código de barras y seriales por bulto
+
+**Objetivo:** que cada saco, garrafa o caja del inventario tenga un **serial único con código de barras**. Al escanearlo, el sistema sabe al instante qué producto es, de qué lote viene, cuándo vence y cuánto contiene. Esto hace rápidos y confiables el conteo, los traslados, el consumo en producción y el despacho.
+
+**Por qué por bulto y no por unidad:** los insumos a granel (karité, aceites) no se pueden serializar por gramo. Etiquetar cada crema una por una sería demasiada operación para una PyME. Además, la normativa de cosméticos exige trazabilidad por **lote**, no por unidad. El bulto es el punto medio: tiene trazabilidad física sin ese costo operativo.
+
+**HU-5.1.1** Como persona de bodega, quiero que cada saco o caja que recibo tenga su etiqueta con código de barras, para escanearla en vez de buscar y digitar el producto y el lote.
+
+| ID | Requerimiento |
+|---|---|
+| RF-5.1.1 | Serial único por bulto con formato `<SKU>-<consecutivo de 6 dígitos>` (ej. `MP-001-000123`). Consecutivo independiente por SKU |
+| RF-5.1.2 | **Al recibir una compra** (M6) se indica cuántos bultos llegaron y cuánto trae cada uno (ej. 3 sacos de 25 kg). El sistema crea 3 seriales, uno por saco |
+| RF-5.1.3 | **Al completar una OP** (M9) el producto terminado se empaca en bultos (ej. 100 cremas en cajas de 24 → 4 cajas de 24 y 1 de 4) y se crea un serial por caja |
+| RF-5.1.4 | **Inventario inicial y ajustes positivos** también generan seriales, para serializar el inventario que ya existe |
+| RF-5.1.5 | Etiqueta para **impresora térmica de 50 × 25 mm**: código de barras **Code 128** con el serial, nombre corto del producto, SKU, lote, vencimiento y cantidad con su unidad. Se genera un PDF con el tamaño exacto de la etiqueta, una por página, que se imprime con el controlador de la impresora |
+| RF-5.1.6 | Impresión en lote (todas las etiquetas de una recepción u OP) y reimpresión de una etiqueta dañada |
+| RF-5.1.7 | Cada serial guarda su **cantidad actual**: si de un saco de 25 kg se consumen 0,8 kg, el saco queda en 24,2 kg |
+| RF-5.1.8 | **Escanear un serial** precarga producto, lote y cantidad en: conteo cíclico (M10), traslados (M2), consumo de OP (M9) y alistamiento de despachos (M12) |
+| RF-5.1.9 | Traslado de un bulto completo escaneando su serial (mueve toda su cantidad a la bodega destino) |
+| RF-5.1.10 | Estados del serial: `ACTIVE`, `EMPTY` (cantidad 0), `SCRAPPED` (dado de baja). Historial de movimientos por serial |
+| RF-5.1.11 | Etiqueta **por SKU** (solo el código del producto, sin serial) para estanterías y para ítems sin código del fabricante |
+| RN-5.1.1 | El serial es único e inmutable; nunca se reutiliza, aunque el bulto quede vacío |
+| RN-5.1.2 | Un bulto pertenece a **un solo producto y un solo lote**; no se mezclan lotes en un bulto |
+| RN-5.1.3 | La suma de las cantidades de los bultos activos de un producto, lote y bodega es igual a su stock en el Kardex |
+| RN-5.1.4 | Si se consume sin escanear, el sistema descuenta de los bultos con FEFO y, a igual vencimiento, del bulto con menor cantidad (para vaciar primero los abiertos) |
+| CA-5.1.1 | Al recibir 3 sacos de karité de 25 kg se imprimen 3 etiquetas `MP-001-000001…3`; al escanear la segunda en un conteo aparece "Manteca de karité · Lote KT-2291 · vence 30/06/2027 · 25 kg" |
+
+**Fuera de la Fase 1:** serial por cada unidad vendible (Fase 3, si un cliente lo necesita) e impresión directa a la impresora térmica en su lenguaje nativo sin pasar por PDF (Fase 2).
+
 ### M6 · Proveedores y órdenes de compra
 
 **Objetivo:** comprar con orden, saber a quién y a qué precio, y que lo recibido entre al inventario con su costo.
@@ -330,7 +361,7 @@ Convenciones: **RF** = requerimiento funcional · **RN** = regla de negocio · *
 | RF-6.2 | Lista de precios por proveedor y producto (último precio pagado se actualiza solo) |
 | RF-6.3 | Orden de compra: proveedor, fecha, fecha esperada, líneas (producto, cantidad, unidad de compra, precio unitario, IVA), total |
 | RF-6.4 | Estados: `DRAFT` → `SENT` → `IN_TRANSIT` → `PARTIALLY_RECEIVED` → `RECEIVED` / `CANCELLED` |
-| RF-6.5 | Recepción total o parcial: cantidad recibida, lote, vencimiento, bodega destino. Genera `IN_PURCHASE` y recalcula costo promedio |
+| RF-6.5 | Recepción total o parcial: cantidad recibida, lote, vencimiento, bodega destino y número de bultos (genera seriales y etiquetas, M5.1). Genera `IN_PURCHASE` y recalcula costo promedio |
 | RF-6.6 | Diferencias en recepción (pedí 10, llegaron 9) quedan registradas en la OC |
 | RF-6.7 | Crear OC desde la sugerencia de faltantes de una OP o desde el copiloto (prellenada) |
 | RF-6.8 | Exportar OC a PDF para enviar al proveedor |
@@ -397,7 +428,7 @@ stateDiagram-v2
 | RF-9.3 | **Validación de factibilidad**: por insumo muestra requerido, disponible, faltante; y la **cantidad máxima producible** con el stock actual |
 | RF-9.4 | Si hay faltantes: botón "Crear orden de compra" con los faltantes prellenados (RF-6.7) |
 | RF-9.5 | Al **iniciar**: reserva lotes con FEFO (editable). El stock reservado deja de estar disponible para otras OPs y despachos |
-| RF-9.6 | Al **completar**: registrar consumo real por insumo y lote (por defecto = teórico), unidades buenas producidas, lote resultante y vencimiento |
+| RF-9.6 | Al **completar**: registrar consumo real por insumo y lote (por defecto = teórico), unidades buenas producidas, lote resultante, vencimiento y empaque en cajas (genera seriales y etiquetas, M5.1) |
 | RF-9.7 | Completar es **atómico** (una transacción): salidas `OUT_PRODUCTION` de cada insumo + entrada `IN_PRODUCTION` del terminado con su costo real. Si algo falla, no se aplica nada |
 | RF-9.8 | Resumen de cierre: costo teórico vs real, rendimiento (producido ÷ planeado), variación por insumo |
 | RF-9.10 | Imprimir orden (hoja de trabajo para la operaria) con fórmula, cantidades y lotes asignados |
@@ -427,7 +458,7 @@ flowchart LR
 | RF-10.2 | Crear sesión de conteo: bodega, lista de ítems (sugeridos por ABC y fecha del último conteo, o manual) |
 | RF-10.3 | **Conteo ciego** opcional: la persona no ve la cantidad del sistema |
 | RF-10.4 | Escaneo con **cámara del celular** desde el navegador y con **pistola USB/Bluetooth** (modo teclado: un campo con foco que recibe el código + Enter) |
-| RF-10.5 | Cada escaneo identifica el producto; se elige el lote y se ingresa la cantidad (o cada escaneo suma 1 para empaques unitarios) |
+| RF-10.5 | Escanear el **serial del bulto** (M5.1) identifica producto, lote y cantidad esperada; la persona confirma o corrige la cantidad. Si se escanea un código de producto (SKU o del fabricante), se elige el lote y se ingresa la cantidad |
 | RF-10.6 | Feedback sonoro/visual; aviso de código desconocido |
 | RF-10.7 | Reporte de diferencias: cantidad y valor, por ítem y lote; % de exactitud de la sesión |
 | RF-10.8 | Aprobación del conteo: genera ajustes con motivo "Conteo cíclico CC-0001" |
@@ -452,7 +483,7 @@ flowchart LR
 | ID | Requerimiento |
 |---|---|
 | RF-12.1 | Crear despacho desde un pedido/factura existente de SYNTHEX (S7) o manual en el demo: cliente, dirección, líneas |
-| RF-12.2 | Asignación de lotes FEFO al alistar; lista de alistamiento (picking) con verificación por escáner |
+| RF-12.2 | Asignación de lotes FEFO al alistar; lista de alistamiento (picking) con verificación escaneando el serial de cada caja (M5.1) |
 | RF-12.3 | Estados: `PENDING` → `PICKING` → `SHIPPED` → `IN_TRANSIT` → `DELIVERED` / `INCIDENT` / `RETURNED` |
 | RF-12.4 | Datos de envío: transportadora, número de guía, costo del flete, fecha de despacho, ETA |
 | RF-12.5 | Al pasar a `SHIPPED`: genera `OUT_SALE` por lote, valorizado al costo promedio |
@@ -682,6 +713,8 @@ erDiagram
   Lot ||--o{ StockLevel : ""
   Product ||--o{ StockMovement : ""
   Lot ||--o{ StockMovement : ""
+  Lot ||--o{ Container : "bultos"
+  Container ||--o{ StockMovement : ""
   Warehouse ||--o{ StockMovement : ""
   ProductionOrder ||--|{ ProductionConsumption : consume
   ProductionOrder }o--|| Recipe : usa
@@ -703,7 +736,8 @@ erDiagram
 | `Warehouse` | code, name, type, isActive |
 | `Lot` | productId, code, expiryDate, status, supplierLot, sourceType (PURCHASE/PRODUCTION), sourceRef |
 | `StockLevel` | productId, warehouseId, lotId, onHand, reserved |
-| `StockMovement` | productId, warehouseId, lotId, type, quantity (±), unitCost, avgCostAfter, balanceAfter, reference, reason, createdAt |
+| `Container` (bulto) | serial (único), productId, lotId, warehouseId, initialQty, currentQty, status, sourceType, sourceRef |
+| `StockMovement` | productId, warehouseId, lotId, containerId, type, quantity (±), unitCost, avgCostAfter, balanceAfter, reference, reason, createdAt |
 | `Recipe` (Fórmula) | productId (único en MVP), name, yieldQuantity, yieldUnit, instructions |
 | `RecipeItem` | recipeId, ingredientId, quantity, unit |
 | `ProductionOrder` | code, productId, recipeId, plannedQty, producedQty, status, outputLotId, theoreticalCost, actualCost, plannedDate, completedAt |
@@ -726,6 +760,7 @@ erDiagram
 | Datos | Prisma ORM · PostgreSQL en el despliegue (SQLite en local) |
 | IA | Vercel AI SDK + Google Gemini (`@ai-sdk/google`) |
 | Escáner | Lectura de cámara en navegador (librería de códigos de barras en JS) + entrada tipo teclado para pistolas USB/Bluetooth |
+| Etiquetas | Generación de Code 128 y PDF de 50 × 25 mm en el servidor |
 | Despliegue | Vercel |
 
 > En Vercel el sistema de archivos es efímero, así que SQLite no persiste datos. Por eso el demo desplegado usa PostgreSQL gestionado.
@@ -776,12 +811,13 @@ src/
 ## 13. Qué incluye el demo y qué queda para después
 
 ### ✅ Demo (Fase 1)
-Catálogo, bodegas y traslados, existencias y Kardex, costo promedio ponderado y valorización, lotes y vencimientos con FEFO y trazabilidad, proveedores y órdenes de compra con recepción, tracking de envíos entrantes, fórmulas con costeo, órdenes de producción, conteo cíclico con escáner (cámara + pistola), ajustes, despachos con tracking saliente, copiloto IA (Gemini), centro de ayuda y tablero básico.
+Catálogo, bodegas y traslados, existencias y Kardex, costo promedio ponderado y valorización, lotes y vencimientos con FEFO y trazabilidad, etiquetas con código de barras y seriales por bulto (impresora térmica), proveedores y órdenes de compra con recepción, tracking de envíos entrantes, fórmulas con costeo, órdenes de producción, conteo cíclico con escáner (cámara + pistola), ajustes, despachos con tracking saliente, copiloto IA (Gemini), centro de ayuda y tablero básico.
 
 ### 🔜 Fase 2
 - **Planeación con pronóstico IA, punto de reorden, cobertura y explosión de necesidades (M16).**
 - **Sincronización automática del tracking** (entrante y saliente): un componente que consulta periódicamente el estado real de cada guía abierta (o recibe notificaciones de la transportadora) y actualiza el tablero solo (ej. "Entregado"), con alertas de novedad. Se diseña con un conector por transportadora y una fuente intercambiable: integración oficial de cada transportadora o un servicio que agrupe varias. Requiere convenios y credenciales. El estado manual queda como respaldo.
 - **Fórmulas avanzadas:** multinivel con productos intermedios, versiones, vista en % de fórmula y % de merma por insumo.
+- Impresión directa a la impresora térmica en su lenguaje nativo (sin pasar por PDF).
 - Cuarentena y liberación por control de calidad para producto terminado.
 - Costo en destino (fletes y aranceles distribuidos sobre la compra).
 - Mano de obra y CIF en el costo de producción.
@@ -793,6 +829,7 @@ Catálogo, bodegas y traslados, existencias y Kardex, costo promedio ponderado y
 - Roles, permisos y auditoría (M17).
 - Notificaciones por correo y WhatsApp.
 - App móvil offline para bodega.
+- Serial por cada unidad vendible (si un cliente lo necesita).
 - Planificación por capacidad (equipos y turnos).
 
 ### ❌ Fuera de alcance
