@@ -253,7 +253,7 @@ Convenciones: **RF** = requerimiento funcional · **RN** = regla de negocio · *
 
 | ID | Requerimiento |
 |---|---|
-| RF-2.1 | CRUD de bodegas: código, nombre, tipo (materias primas, empaque, producción, producto terminado, cuarentena), activa/inactiva |
+| RF-2.1 | CRUD de bodegas: código, nombre, tipo (materias primas, empaque, producción, producto terminado), activa/inactiva. La cuarentena es un **estado del lote**, no una bodega: el lote no se mueve físicamente para quedar en cuarentena |
 | RF-2.2 | Bodega por defecto por tipo de producto (recepciones de MP llegan a BOD-MP, producción entrega a BOD-PT) |
 | RF-2.3 | Traslado entre bodegas: producto, lote, cantidad, origen, destino. Genera dos movimientos (salida + entrada) con la misma referencia |
 | RN-2.1 | Un traslado no cambia el costo promedio (solo ubicación) |
@@ -338,7 +338,13 @@ Convenciones: **RF** = requerimiento funcional · **RN** = regla de negocio · *
 | RF-5.5 | **Trazabilidad hacia adelante:** desde un lote de insumo, ver en qué lotes de producto terminado se usó y a qué clientes se despachó |
 | RF-5.6 | Alertas: lotes que vencen en ≤ 30/60/90 días; lotes vencidos bloqueados para consumo y despacho |
 | RF-5.7 | Estado del lote: `DISPONIBLE`, `CUARENTENA`, `BLOQUEADO`, `VENCIDO` |
+| RF-5.8 | **Cuarentena de producto terminado:** todo lote producido en una OP entra en `CUARENTENA`. Control de calidad lo **libera** (pasa a `DISPONIBLE`) o lo **rechaza** (pasa a `BLOQUEADO`) con un clic y una nota obligatoria. Queda registrado quién y cuándo |
+| RF-5.9 | **Cuarentena manual:** cualquier lote (insumo o producto terminado) se puede poner en `CUARENTENA` ante una sospecha (reclamo de cliente, alerta del proveedor), con motivo obligatorio |
+| RF-5.10 | Lista "Pendientes de liberación": lotes en cuarentena con días transcurridos, para que no se queden olvidados |
 | RN-5.1 | Un lote vencido no se puede consumir ni despachar; solo dar de baja (`BAJA` · SCR) |
+| RN-5.3 | Un lote en `CUARENTENA` o `BLOQUEADO` **no se puede consumir ni despachar**, pero **sí cuenta** en el stock físico y en el valor del inventario |
+| RN-5.4 | Un lote rechazado se resuelve con baja (`BAJA` · SCR) o, si es insumo, con devolución al proveedor (`DEV_PROVEEDOR` · RTV, Fase 2) |
+| RN-5.5 | Cambiar el estado de un lote no genera movimiento de inventario (no cambia cantidades), pero queda en el historial del lote con usuario, fecha y motivo |
 | RN-5.2 | El vencimiento del producto terminado no puede ser posterior al vencimiento más próximo de sus insumos (alerta; no bloqueo en MVP) |
 | CA-5.1 | Ante un reclamo del lote `PT001-261114-01`, en 2 clics se ve el lote de karité usado y su proveedor |
 
@@ -449,7 +455,7 @@ stateDiagram-v2
 | RF-9.4 | Si hay faltantes: botón "Crear orden de compra" con los faltantes prellenados (RF-6.7) |
 | RF-9.5 | Al **iniciar**: reserva lotes con FEFO (editable). El stock reservado deja de estar disponible para otras OPs y despachos |
 | RF-9.6 | Al **completar**: registrar consumo real por insumo y lote (por defecto = teórico), unidades buenas producidas, lote resultante, vencimiento y empaque en cajas (genera seriales y etiquetas, M5.1) |
-| RF-9.7 | Completar es **atómico** (una transacción): salidas `SAL_CONSUMO` (MI) de cada insumo + entrada `ENT_PRODUCCION` (FGR) del terminado con su costo real. Si algo falla, no se aplica nada |
+| RF-9.7 | Completar es **atómico** (una transacción): salidas `SAL_CONSUMO` (MI) de cada insumo + entrada `ENT_PRODUCCION` (FGR) del terminado con su costo real. El lote producido queda en `CUARENTENA` hasta su liberación (RF-5.8). Si algo falla, no se aplica nada |
 | RF-9.8 | Resumen de cierre: costo teórico vs real, rendimiento (producido ÷ planeado), variación por insumo |
 | RF-9.10 | Imprimir orden (hoja de trabajo para la operaria) con fórmula, cantidades y lotes asignados |
 | RN-9.1 | No se puede iniciar una OP sin stock disponible suficiente (en el MVP no se permite producción parcial con faltantes) |
@@ -549,7 +555,7 @@ Detalle completo en la [sección 10](#10-copiloto-ia).
 | ID | Requerimiento | Fase |
 |---|---|---|
 | RF-15.1 | KPIs: valor del inventario (MP, empaque, PT), OPs en proceso, producción del mes (unidades y costo), exactitud del último conteo | 1 |
-| RF-15.2 | Alertas: stock bajo mínimo, lotes por vencer, envíos entrantes retrasados, despachos con novedad | 1 |
+| RF-15.2 | Alertas: stock bajo mínimo, lotes por vencer, lotes pendientes de liberación, envíos entrantes retrasados, despachos con novedad | 1 |
 | RF-15.3 | Rotación de inventario y días de inventario | 2 |
 | RF-15.4 | Notificaciones por correo/WhatsApp | 3 |
 
@@ -621,7 +627,8 @@ sequenceDiagram
   L->>OP: Inicia OP-0001
   OP->>INV: Reserva lotes FEFO
   L->>OP: Completa (100 buenas)
-  OP->>INV: Transacción atómica:<br/>SAL_CONSUMO (MI) por cada insumo y lote<br/>ENT_PRODUCCION (FGR) +100 cremas, lote PT001-261114-01, costo $2.920,40
+  OP->>INV: Transacción atómica:<br/>SAL_CONSUMO (MI) por cada insumo y lote<br/>ENT_PRODUCCION (FGR) +100 cremas, lote PT001-261114-01, costo $2.920,40<br/>lote en CUARENTENA
+  L->>INV: Control de calidad libera el lote → DISPONIBLE para despachar
   INV-->>L: Kardex y valor de inventario actualizados
 ```
 
@@ -757,7 +764,8 @@ erDiagram
 | `Product` | sku, name, barcode, type, baseUnit, tracksLot, tracksExpiry, shelfLifeDays, minStock, safetyStock, leadTimeDays, avgCost, salePrice, nsoCode |
 | `UnitConversion` | productId, unit, factorToBase |
 | `Warehouse` | code, name, type, isActive |
-| `Lot` | productId, code, expiryDate, status, supplierLot, sourceType (PURCHASE/PRODUCTION), sourceRef |
+| `Lot` | productId, code, expiryDate, status, supplierLot, sourceType (COMPRA/PRODUCCION), sourceRef |
+| `LotStatusChange` | lotId, fromStatus, toStatus, reason, userId, createdAt |
 | `StockLevel` | productId, warehouseId, lotId, onHand, reserved |
 | `Container` (bulto) | serial (único), productId, lotId, warehouseId, initialQty, currentQty, status, sourceType, sourceRef |
 | `StockMovement` | number, type (código en español), productId, warehouseId, toWarehouseId, lotId, containerId, quantity (±), unit, unitCost, avgCostBefore, avgCostAfter, balanceBefore, balanceAfter, documentType, documentId, documentNumber, remissionNumber, partyType (proveedor/cliente), partyId, reason, relatedMovementId, userId, createdAt |
@@ -841,7 +849,7 @@ Catálogo, bodegas y traslados, existencias y Kardex, costo promedio ponderado y
 - **Sincronización automática del tracking** (entrante y saliente): un componente que consulta periódicamente el estado real de cada guía abierta (o recibe notificaciones de la transportadora) y actualiza el tablero solo (ej. "Entregado"), con alertas de novedad. Se diseña con un conector por transportadora y una fuente intercambiable: integración oficial de cada transportadora o un servicio que agrupe varias. Requiere convenios y credenciales. El estado manual queda como respaldo.
 - **Fórmulas avanzadas:** multinivel con productos intermedios, versiones, vista en % de fórmula y % de merma por insumo.
 - Impresión directa a la impresora térmica en su lenguaje nativo (sin pasar por PDF).
-- Cuarentena y liberación por control de calidad para producto terminado.
+- Control de calidad avanzado: checklist de análisis por producto (pH, viscosidad, olor, microbiología) con resultados registrados, certificados de análisis del proveedor y cuarentena automática al recibir insumos.
 - Costo en destino (fletes y aranceles distribuidos sobre la compra).
 - Mano de obra y CIF en el costo de producción.
 - Devoluciones de clientes.
