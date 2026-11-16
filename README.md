@@ -50,7 +50,7 @@ SYNTHEX ya permite **crear productos, controlar existencias y consultar movimien
 ### Usuario objetivo (persona)
 
 **Laura, 34 años, fundadora de una marca de cosmética natural en Medellín.**
-- Equipo de 6 a 12 personas: ella, 2 o 3 operarias de producción, 1 persona de bodega y despachos, 1 asistente administrativa.
+- Equipo de menos de 12 personas; el núcleo es ella, 2 o 3 operarias de producción, 1 persona de bodega y despachos y 1 asistente administrativa.
 - Vende por su tienda online, marketplaces y a 15 tiendas naturistas (canal B2B).
 - Produce **por lotes** (de 50 a 300 unidades) unas 8 a 15 veces al mes.
 - Maneja unos **40 insumos** (aceites, mantecas, activos, envases, etiquetas) y unos **12 productos terminados**.
@@ -151,7 +151,7 @@ Revisamos el enfoque de suites ERP con módulo de manufactura (p. ej. Odoo), her
 | **FEFO** | *First Expired, First Out*: se usa primero lo que vence antes |
 | **Kardex** | Historial cronológico de entradas y salidas por producto, con costo |
 | **Costo promedio ponderado** | Costo unitario = valor total del inventario ÷ cantidad total |
-| **Stock disponible** | Físico − reservado − en cuarentena |
+| **Stock disponible** | Físico − reservado − lotes en cuarentena, bloqueados o vencidos |
 | **Stock en tránsito** | Comprado y despachado por el proveedor, aún no recibido |
 | **Punto de reorden (ROP)** | Nivel de stock en el que se debe comprar o producir |
 | **Stock de seguridad** | Colchón para cubrir variaciones de demanda o retrasos |
@@ -200,7 +200,7 @@ flowchart LR
 
 ### Priorización
 
-**Fase 1 (MVP / Demo)** se construye en los 4 días. **Fase 2** y **Fase 3** quedan especificadas en este documento.
+**Fase 1 (MVP / Demo)** se construyó en los 4 días del reto. **Fase 2** y **Fase 3** quedan especificadas en este documento.
 
 | # | Módulo | Fase | ¿En el demo? |
 |---|---|---|---|
@@ -334,7 +334,7 @@ Convenciones: **RF** = requerimiento funcional · **RN** = regla de negocio · *
 | ID | Requerimiento |
 |---|---|
 | RF-5.1 | Registrar lote del proveedor y vencimiento al recibir una compra |
-| RF-5.2 | Generar código de lote automático para producto terminado: `<SKU>-<AAMMDD>-<consecutivo>` (editable) con vencimiento = fecha de producción + vida útil |
+| RF-5.2 | Generar código de lote automático para producto terminado: `<SKU sin guiones>-<AAMMDD>-<consecutivo de 2 dígitos>` (editable, ej. `PT001-261114-01`) con vencimiento = fecha de producción + vida útil |
 | RF-5.3 | Sugerencia **FEFO** al consumir en OP y al despachar (el usuario puede cambiar el lote) |
 | RF-5.4 | **Trazabilidad hacia atrás:** desde un lote de crema, ver qué lotes de insumos se usaron y de qué proveedor |
 | RF-5.5 | **Trazabilidad hacia adelante:** desde un lote de insumo, ver en qué lotes de producto terminado se usó y a qué clientes se despachó |
@@ -344,10 +344,10 @@ Convenciones: **RF** = requerimiento funcional · **RN** = regla de negocio · *
 | RF-5.9 | **Cuarentena manual:** cualquier lote (insumo o producto terminado) se puede poner en `CUARENTENA` ante una sospecha (reclamo de cliente, alerta del proveedor), con motivo obligatorio |
 | RF-5.10 | Lista "Pendientes de liberación": lotes en cuarentena con días transcurridos, para que no se queden olvidados |
 | RN-5.1 | Un lote vencido no se puede consumir ni despachar; solo dar de baja (`BAJA` · SCR) |
+| RN-5.2 | El vencimiento del producto terminado no puede ser posterior al vencimiento más próximo de sus insumos (alerta; no bloqueo en MVP) |
 | RN-5.3 | Un lote en `CUARENTENA` o `BLOQUEADO` **no se puede consumir ni despachar**, pero **sí cuenta** en el stock físico y en el valor del inventario |
 | RN-5.4 | Un lote rechazado se resuelve con baja (`BAJA` · SCR) o, si es insumo, con devolución al proveedor (`DEV_PROVEEDOR` · RTV, Fase 2) |
 | RN-5.5 | Cambiar el estado de un lote no genera movimiento de inventario (no cambia cantidades), pero queda en el historial del lote con usuario, fecha y motivo |
-| RN-5.2 | El vencimiento del producto terminado no puede ser posterior al vencimiento más próximo de sus insumos (alerta; no bloqueo en MVP) |
 | CA-5.1 | Ante un reclamo del lote `PT001-261114-01`, en 2 clics se ve el lote de karité usado y su proveedor |
 
 ### M5.1 · Etiquetas con código de barras y seriales por bulto
@@ -370,8 +370,8 @@ Convenciones: **RF** = requerimiento funcional · **RN** = regla de negocio · *
 | RF-5.1.8 | **Escanear un serial** precarga producto, lote y cantidad actual en: traslados (M2), consumo de OP (M9) y alistamiento de despachos (M12). En el **conteo cíclico** la cantidad se precarga solo si el bulto está `SELLADO`; si está `ABIERTO` hay que contar y digitar (RF-10.5) |
 | RF-5.1.9 | Traslado de un bulto completo escaneando su serial (mueve toda su cantidad a la bodega destino) |
 | RF-5.1.10 | Estados del serial: `SELLADO` (cantidad actual = inicial), `ABIERTO` (ya se sacó algo), `VACIO` (cantidad 0), `DADO_DE_BAJA`. Historial de movimientos por serial |
-| RF-5.1.12 | Un bulto pasa a `ABIERTO` **automáticamente** con la primera salida parcial (consumo, despacho o ajuste), o **manualmente** si alguien lo abrió (ej. para tomar una muestra) o si en un conteo se reporta el sello roto |
 | RF-5.1.11 | Etiqueta **por SKU** (solo el código del producto, sin serial) para estanterías y para ítems sin código del fabricante |
+| RF-5.1.12 | Un bulto pasa a `ABIERTO` **automáticamente** con la primera salida parcial (consumo, despacho o ajuste), o **manualmente** si alguien lo abrió (ej. para tomar una muestra) o si en un conteo se reporta el sello roto |
 | RN-5.1.1 | El serial es único e inmutable; nunca se reutiliza, aunque el bulto quede vacío |
 | RN-5.1.2 | Un bulto pertenece a **un solo producto y un solo lote**; no se mezclan lotes en un bulto |
 | RN-5.1.3 | La suma de las cantidades de los bultos activos de un producto, lote y bodega es igual a su stock en el Kardex |
@@ -460,7 +460,7 @@ stateDiagram-v2
 | RF-9.6 | Al **completar**: registrar consumo real por insumo y lote (por defecto = teórico), unidades buenas producidas, lote resultante, vencimiento y empaque en cajas (genera seriales y etiquetas, M5.1) |
 | RF-9.7 | Completar es **atómico** (una transacción): salidas `SAL_CONSUMO` (MI) de cada insumo + entrada `ENT_PRODUCCION` (FGR) del terminado con su costo real. El lote producido queda en `CUARENTENA` hasta su liberación (RF-5.8). Si algo falla, no se aplica nada |
 | RF-9.8 | Resumen de cierre: costo teórico vs real, rendimiento (producido ÷ planeado), variación por insumo |
-| RF-9.10 | Imprimir orden (hoja de trabajo para la operaria) con fórmula, cantidades y lotes asignados |
+| RF-9.9 | Imprimir orden (hoja de trabajo para la operaria) con fórmula, cantidades y lotes asignados |
 | RN-9.1 | No se puede iniciar una OP sin stock disponible suficiente (en el MVP no se permite producción parcial con faltantes) |
 | RN-9.2 | Una OP completada es inmutable; un error se corrige con ajuste |
 | RN-9.3 | Anular una OP en proceso libera sus reservas y no genera movimientos |
@@ -491,14 +491,14 @@ flowchart LR
 | RF-10.5a | **Bulto `SELLADO`:** un escaneo confirma la cantidad completa (en pantalla aparece "Caja sellada ✓", sin mostrar la cantidad del sistema). Se pregunta "¿Sello intacto?" (sí por defecto); si la respuesta es no, se trata como abierto |
 | RF-10.5b | **Bulto `ABIERTO`:** aparece el aviso **"Caja abierta: cuenta las unidades"** y la cantidad **no se precarga**; hay que digitarla. En insumos a granel se digita el peso o volumen medido (ej. con báscula) |
 | RF-10.5c | Si se escanea un código de producto (SKU o del fabricante) en vez de un serial, se elige el lote y se digita la cantidad |
-| RN-10.3 | Las diferencias se ajustan **sobre el serial exacto** (`AJUSTE_SAL` / `AJUSTE_ENT` · ADJ, documento CC), para saber en qué caja faltó o sobró |
 | RF-10.6 | Feedback sonoro/visual; aviso de código desconocido |
 | RF-10.7 | Revisión del conteo: por ítem, lote y serial se ve cantidad del sistema, cantidad contada, diferencia en unidades y en pesos; % de exactitud de la sesión |
 | RF-10.8 | Aprobación del conteo: genera ajustes con motivo "Conteo cíclico CC-0001" |
 | RN-10.1 | Mientras una sesión está abierta, los movimientos de esos ítems se registran y se tienen en cuenta en la diferencia (se compara contra el stock al momento del escaneo) |
-| RN-10.2 | Diferencias que superen un umbral de valor (configurable) requieren comentario |
-| CA-10.2 | La caja `PT-001-000045` (inicial 24, el sistema dice 18 porque se despacharon 6) se escanea: aparece "Caja abierta: cuenta las unidades", se digitan 16 y, al aprobar, se crea un ajuste de −2 sobre ese serial |
+| RN-10.2 | Diferencias de más de $50.000 requieren comentario (umbral fijo en el MVP) |
+| RN-10.3 | Las diferencias se ajustan **sobre el serial exacto** (`AJUSTE_SAL` / `AJUSTE_ENT` · ADJ, documento CC), para saber en qué caja faltó o sobró |
 | CA-10.1 | Escanear 48 frascos cuando el sistema tiene 50 muestra diferencia de −2 ($2.400) y, al aprobar, crea `AJUSTE_SAL` (ADJ) de 2 con documento CC |
+| CA-10.2 | La caja `PT-001-000045` (inicial 24, el sistema dice 18 porque se despacharon 6) se escanea: aparece "Caja abierta: cuenta las unidades", se digitan 16 y, al aprobar, se crea un ajuste de −2 sobre ese serial |
 
 ### M11 · Ajustes de inventario
 
@@ -523,10 +523,10 @@ flowchart LR
 | RF-12.5 | Al pasar a `DESPACHADO`: genera la **remisión de entrega** `REM-0001` y una salida `SAL_VENTA` (GI) por lote, valorizada al costo promedio. Cada movimiento queda con el número de remisión |
 | RF-12.5b | **Remisión de entrega en PDF**: número, fecha, datos del cliente (razón social, NIT, dirección, ciudad), referencia del pedido o factura, productos con cantidad, lote, vencimiento y seriales de las cajas, transportadora, número de guía y espacio para nombre, firma, cédula y fecha de quien recibe |
 | RF-12.5c | Al pasar a `ENTREGADO`: adjuntar la **remisión firmada** (foto o PDF) como prueba de entrega (POD, *Proof of Delivery*) |
-| RN-12.2 | La remisión acompaña la mercancía y **no reemplaza la factura electrónica**, que sigue emitiéndose en el módulo de ventas de SYNTHEX |
 | RF-12.6 | Línea de tiempo de eventos de tracking (manual en MVP) y enlace a la página oficial de rastreo (RF-7.3b) |
 | RF-12.7 | Tablero de despachos: pendientes, en tránsito, con novedad, entregados |
-| RN-12.1 | No se despachan lotes vencidos, en cuarentena ni con vencimiento menor a X días (configurable, por defecto 90) |
+| RN-12.1 | No se despachan lotes vencidos, en cuarentena ni con menos de 90 días de vida útil |
+| RN-12.2 | La remisión acompaña la mercancía y **no reemplaza la factura electrónica**, que sigue emitiéndose en el módulo de ventas de SYNTHEX |
 | CA-12.1 | Un despacho de 24 cremas descuenta del lote más próximo a vencer y la trazabilidad del lote muestra al cliente |
 
 ### M13 · Copiloto IA
@@ -648,7 +648,7 @@ sequenceDiagram
 |---|---|---|---|
 | Manteca de karité | 5,00 kg | `SAL_CONSUMO` (MI) −0,80 kg (OP-0001) | 4,20 kg |
 | Frasco ámbar 50 g | 140 u | `SAL_CONSUMO` (MI) −100 u | 40 u |
-| … (8 líneas más) | | | |
+| … (9 líneas más) | | | |
 | Crema hidratante 50 g | 12 u | `ENT_PRODUCCION` (FGR) +100 u, lote PT001-261114-01 | 112 u |
 
 ---
@@ -689,7 +689,7 @@ Receta "Crema hidratante de karité 50 g", lote estándar = 100 unidades (5 kg d
 - Con precio de venta de $35.000, el margen bruto estimado es de **91,7%**. Este dato ayuda a Laura a ver que el **empaque es el 60% de su costo**, algo que hoy no sabe.
 
 ### 9.3 Valor del inventario
-`Σ (cantidad disponible + reservada + cuarentena) × costo promedio`, por bodega y por tipo. El inventario en tránsito se muestra aparte y no se suma hasta recibirse.
+`Σ (stock físico de todos los lotes, incluidos cuarentena y bloqueados) × costo promedio`, por bodega y por tipo. El inventario en tránsito se muestra aparte y no se suma hasta recibirse.
 
 ---
 
@@ -706,7 +706,7 @@ Receta "Crema hidratante de karité 50 g", lote estándar = 100 unidades (5 kg d
 
 ### Modelo y proveedor
 - **Google Gemini** con el SDK oficial `@google/genai` y *function calling*.
-- Cadena de modelos con respaldo: `gemini-3.5-flash` → `gemini-flash-latest` → `gemini-3.5-flash-lite`. Si un modelo está saturado (503), sin cupo (429) o ya no existe (404), se usa el siguiente. `GEMINI_MODEL` permite fijar otro primero.
+- Cadena de modelos con respaldo: `gemini-3.5-flash` → `gemini-flash-latest` → `gemini-3.5-flash-lite`. Si un modelo está saturado (503), sin cupo (429), con error interno (500) o ya no existe (404), se usa el siguiente. `GEMINI_MODEL` permite fijar otro primero.
 - Razones: buena relación costo/latencia, soporte nativo de llamadas a herramientas, buen desempeño en español y capa gratuita suficiente para el demo.
 - Variable de entorno: `GEMINI_API_KEY` (Google AI Studio).
 
@@ -729,14 +729,14 @@ flowchart LR
   RESP --> U
 ```
 
-- Cada herramienta llama a los **mismos casos de uso** que la interfaz (`checkFeasibility`, `recipeCost`, `inventoryRows`…). La IA no tiene acceso directo a la base de datos.
-- Las herramientas `proponer_*` **no escriben nada**: devuelven una propuesta. Solo al confirmarla se crea el documento en **borrador**, marcado como "Creado con Copiloto IA".
+- Las herramientas reutilizan los **mismos casos de uso** que la interfaz (`checkFeasibility`, `recipeCost`, `inventoryRows`…) y solo hacen lecturas directas puntuales (buscar un producto, listar lotes). Ninguna escribe en la base de datos.
+- Las herramientas `proponer_*` **no escriben nada**: devuelven una propuesta. Solo al confirmarla se crea el documento en **borrador**, marcado como "Creada con Copiloto IA".
 - La respuesta incluye una **tarjeta de acción** con los datos: el usuario confirma con un clic.
-- Si el modelo no identifica el producto con certeza, pregunta ("¿Te refieres a la crema de karité 50 g o la de 100 g?").
+- Si el modelo no identifica el producto con certeza, pregunta ("¿Te refieres a la crema de karité o al bálsamo labial?").
 
 ### Ejemplos
 - *"¿Me alcanza el inventario para 250 cremas de karité?"* → indica el máximo producible con el stock disponible y los faltantes exactos por insumo (con los datos del demo: frascos, tapas, etiquetas y algunos insumos), y muestra la tarjeta de orden de producción + una orden de compra por cada proveedor.
-- *"Para 100 bálsamos uso 400 g de cera de abejas, 300 g de manteca de cacao, 280 ml de aceite de coco, 20 ml de vitamina E y 100 tubos"* → propuesta de fórmula con cada línea mapeada a su SKU y convertida a la unidad base (400 g → 0,4 kg), con costo por lote ($104.140) y por unidad. Si un insumo no existe, pide crearlo en Productos.
+- *"Para 100 bálsamos uso 400 g de cera de abejas, 300 g de manteca de cacao, 280 ml de aceite de coco, 20 ml de vitamina E y 100 tubos"* → propuesta de fórmula con cada línea mapeada a su SKU y convertida a la unidad base (400 g → 0,4 kg), con su costo por lote y por unidad (calculado con los precios del momento). Si un insumo no existe, pide crearlo en Productos.
 - *"¿Qué lotes vencen en los próximos 60 días?"* → lista de lotes con días restantes.
 - *"¿Cómo registro la llegada de una compra?"* → pasos del centro de ayuda.
 
@@ -744,7 +744,7 @@ flowchart LR
 
 ## 11. Modelo de datos
 
-Amplía el borrador inicial (`Product`, `Recipe`, `RecipeItem`, `ProductionOrder`, `StockMovement`) para soportar bodegas, lotes, costos, compras, envíos, conteos y despachos.
+Amplía el modelo inicial propuesto en el enunciado del reto (`Product`, `Recipe`, `RecipeItem`, `ProductionOrder`, `StockMovement`) para soportar bodegas, lotes, costos, compras, envíos, conteos y despachos.
 
 ```mermaid
 erDiagram
@@ -778,11 +778,11 @@ erDiagram
 | `Product` | sku, name, barcode, type, baseUnit, tracksLot, tracksExpiry, shelfLifeDays, minStock, safetyStock, leadTimeDays, avgCost, salePrice, nsoCode |
 | `UnitConversion` | productId, unit, factorToBase |
 | `Warehouse` | code, name, type, isActive |
-| `Lot` | productId, code, expiryDate, status, supplierLot, sourceType (COMPRA/PRODUCCION), sourceRef |
-| `LotStatusChange` | lotId, fromStatus, toStatus, reason, userId, createdAt |
+| `Lot` | productId, code, expiryDate, status, supplierLot, sourceType (COMPRA/PRODUCCION/AJUSTE), sourceRef |
+| `LotStatusChange` | lotId, fromStatus, toStatus, reason, userName, createdAt |
 | `StockLevel` | productId, warehouseId, lotId, onHand, reserved |
 | `Container` (bulto) | serial (único), productId, lotId, warehouseId, initialQty, currentQty, status, sourceType, sourceRef |
-| `StockMovement` | number, type (código en español), productId, warehouseId, toWarehouseId, lotId, containerId, quantity (±), unit, unitCost, avgCostBefore, avgCostAfter, balanceBefore, balanceAfter, documentType, documentId, documentNumber, remissionNumber, partyType (proveedor/cliente), partyId, reason, relatedMovementId, userId, createdAt |
+| `StockMovement` | number, type (código en español), productId, warehouseId, toWarehouseId, lotId, containerId, quantity (±), unitCost, totalValue, avgCostBefore, avgCostAfter, balanceBefore, balanceAfter, documentType, documentId, documentNumber, remissionNumber, partyType (proveedor/cliente), partyName, reason, relatedMovementId, userName, createdAt |
 | `Recipe` (Fórmula) | productId (único en MVP), name, yieldQuantity, yieldUnit, instructions |
 | `RecipeItem` | recipeId, ingredientId, quantity, unit |
 | `ProductionOrder` | code, productId, recipeId, plannedQty, producedQty, status, outputLotId, theoreticalCost, actualCost, plannedDate, completedAt |
@@ -830,7 +830,7 @@ src/
 │   ├── copiloto/                 # M13
 │   ├── ayuda/                    # M14
 │   ├── actions.ts                # Server Actions → casos de uso
-│   └── api/                      # copilot, etiquetas (PDF), remision/[id] (PDF)
+│   └── api/                      # copilot, etiquetas (PDF), remision/[id] y orden-compra/[id] (PDF)
 ├── domain/services/              # Reglas puras: costo promedio, FEFO, requerimientos, ABC, seriales, unidades
 ├── application/use-cases/        # catalog, purchasing, production, inventory, dispatches, insights, traceability
 ├── infrastructure/
@@ -843,7 +843,7 @@ src/
 **Decisiones clave**
 - Las reglas de costo (promedio ponderado), FEFO, requerimientos de fórmula y ABC viven en **servicios de dominio puros**, probados sin base de datos.
 - **Todo el stock vive en bultos serializados.** El saldo de un producto es la suma de sus bultos, y cada movimiento del Kardex apunta a un bulto. Todo cambio pasa por `infrastructure/database/stock.ts`, dentro de una transacción serializable: crea el movimiento, ajusta el bulto y recalcula el costo. Así el Kardex y los bultos nunca se desalinean (`npm run check:seed` lo verifica).
-- La IA usa los mismos casos de uso que la interfaz: no hay una "segunda lógica" para el Copiloto. Por eso `infrastructure/ai/` es un adaptador que se apoya en `application/` (como las pantallas), y no al revés.
+- La IA reutiliza los casos de uso de la interfaz para calcular (factibilidad, costos, existencias) y nunca escribe: no hay una "segunda lógica" de negocio para el Copiloto. Por eso `infrastructure/ai/` es un adaptador que se apoya en `application/` (como las pantallas), y no al revés.
 - Las Server Actions son endpoints públicos: validan los valores de listas cerradas y las propuestas del Copiloto (zod) antes de llamar a los casos de uso, y solo muestran al usuario los errores de negocio; los errores internos se registran sin exponer detalles.
 
 ---
@@ -861,7 +861,7 @@ Catálogo, bodegas y traslados, existencias y Kardex, costo promedio ponderado y
 - Control de calidad avanzado: checklist de análisis por producto (pH, viscosidad, olor, microbiología) con resultados registrados, certificados de análisis del proveedor y cuarentena automática al recibir insumos.
 - Costo en destino (fletes y aranceles distribuidos sobre la compra).
 - Mano de obra y CIF en el costo de producción.
-- Devoluciones de clientes.
+- Devoluciones de clientes y a proveedores.
 - Producción parcial y subproductos.
 - Indicadores de rotación y días de inventario.
 
@@ -926,7 +926,7 @@ npm install
 cp .env.example .env
 ```
 
-Edita `.env`: pon en `DATABASE_URL` y `DIRECT_URL` la misma cadena de tu Postgres local, y tu `GEMINI_API_KEY`.
+Crea una base vacía (ej. `createdb synthex`) y edita `.env`: pon en `DATABASE_URL` y `DIRECT_URL` la misma cadena de tu Postgres local (ej. `postgresql://postgres:postgres@localhost:5432/synthex`) y tu `GEMINI_API_KEY`.
 
 ```bash
 npx prisma migrate deploy
