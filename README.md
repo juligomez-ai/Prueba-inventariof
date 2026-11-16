@@ -998,7 +998,7 @@ Los datos de ejemplo traen **6 meses de historia** (ver [Datos de ejemplo](#dato
 4. **Producto (ej. manteca de karité):** gráfica del historial del costo promedio, que sube con cada compra.
 5. **Producción:** crear una orden de 100 cremas → iniciar (reserva FEFO) → completar con 98 buenas en cajas de 24 → el lote queda en cuarentena con sus seriales y etiquetas.
 6. **Control de calidad:** liberar el lote del jabón con una nota.
-7. **Despachos:** la remisión pendiente de Farmacia Botánica El Poblado → alistar → escanear cada caja → despachar con guía → descargar la remisión PDF.
+7. **Despachos:** abre una remisión pendiente o en alistamiento (o crea un despacho nuevo) → alistar → escanear cada caja → despachar con guía → descargar la remisión PDF.
 8. **Compras:** la orden de compra de envases en tránsito (retrasada) → descargar la OC en PDF → recibirla con la remisión del proveedor → ver cómo cambia el costo promedio en el Kardex.
-9. **Conteo cíclico:** escanear una caja sellada (un escaneo) y una abierta (pide contar, sin mostrar el sistema) → cerrar → revisar → aprobar el ajuste.
+9. **Conteo cíclico:** abre un conteo en curso o crea uno nuevo → escanear una caja sellada (un escaneo) y una abierta (pide contar, sin mostrar el sistema) → cerrar → revisar → aprobar el ajuste.
 10. **Trazabilidad:** desde un lote de bálsamo, ver los lotes de insumos usados y los clientes a los que llegó; la orden muestra la alerta de vencimiento si el producto vence después que algún insumo.
