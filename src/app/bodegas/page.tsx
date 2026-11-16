@@ -6,10 +6,11 @@ import { Card, CardBody, CardHeader, Field, Input, PageHeader, Select, Table, Td
 import { prisma } from "@/infrastructure/database/prisma";
 import { warehouseTypeLabel } from "@/shared/labels";
 import { fmtDateTime, fmtMoney, fmtQty, n } from "@/shared/numbers";
+import { ACTIVE_STATUSES } from "@/infrastructure/database/stock";
 
 export default async function Warehouses() {
   const [warehouses, transfers] = await Promise.all([
-    prisma.warehouse.findMany({ include: { containers: { where: { status: { in: ["SELLADO", "ABIERTO"] } }, include: { product: true } } }, orderBy: { code: "asc" } }),
+    prisma.warehouse.findMany({ include: { containers: { where: { status: { in: ACTIVE_STATUSES } }, include: { product: true } } }, orderBy: { code: "asc" } }),
     prisma.stockMovement.findMany({ where: { type: "TRASLADO_SAL" }, include: { product: true, warehouse: true, toWarehouse: true, container: true }, orderBy: { number: "desc" }, take: 20 }),
   ]);
   return (

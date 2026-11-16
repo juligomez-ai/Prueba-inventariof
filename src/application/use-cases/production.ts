@@ -2,11 +2,20 @@ import { allocate } from "@/domain/services/allocation";
 import { productionLotCode, splitIntoPacks } from "@/domain/services/codes";
 import { maxProducible, requirements } from "@/domain/services/requirements";
 import { toBase } from "@/domain/services/units";
-import { inTransaction, nextSequence, pad, prisma, type Db, type Tx } from "@/infrastructure/database/prisma";
+import { inTransaction, nextDocCode, nextSequence, prisma, type Db, type Tx } from "@/infrastructure/database/prisma";
 import { availableContainers, availableQty, postEntry, postExit } from "@/infrastructure/database/stock";
 import { DomainError } from "@/shared/errors";
-import { n, round2, round4 } from "@/shared/numbers";
+import { n, round2, round4, MS_PER_DAY } from "@/shared/numbers";
 import { CURRENT_USER } from "@/shared/user";
+
+/** Unidad base de lo que se cuenta por piezas: exige cantidades enteras. */
+const UNIT_EACH = "und";
+
+/** Consecutivo de lotes producidos del mismo SKU en el día (01, 02…), para el código <SKU>-AAMMDD-nn. */
+async function nextLotNumberOfDay(tx: Tx, sku: string, date: Date) {
+  const dayKey = productionLotCode(sku, date, 0); // el sufijo 00 identifica el día
+  return nextSequence(tx, `LOTE:${sku}:${dayKey}`);
+}
 
 // ───────────────────────── Fórmulas (M8) ─────────────────────────
 
@@ -95,7 +104,7 @@ export async function checkFeasibility(productId: string, quantity: number, opts
     quantity,
     rows,
     feasible: rows.every((r) => r.shortage <= 0),
-    maxProducible: maxProducible(lines, yieldQty, available, recipe.product.baseUnit === "und"),
+    maxProducible: maxProducible(lines, yieldQty, available, recipe.product.baseUnit === UNIT_EACH),
     estimatedCost,
     estimatedUnitCost: quantity > 0 ? round2(estimatedCost / quantity) : 0,
   };
@@ -114,14 +123,14 @@ export async function createProductionOrder(input: {
   return inTransaction(async (tx) => {
     const recipe = await tx.recipe.findUnique({ where: { productId: input.productId }, include: { items: { include: { ingredient: true } }, product: true } });
     if (!recipe) throw new DomainError("El producto no tiene fórmula.");
-    if (recipe.product.baseUnit === "und" && !Number.isInteger(input.quantity)) throw new DomainError("La cantidad debe ser un número entero de unidades.");
+    if (recipe.product.baseUnit === UNIT_EACH && !Number.isInteger(input.quantity)) throw new DomainError("La cantidad debe ser un número entero de unidades.");
     const req = requirements(
       recipe.items.map((i) => ({ productId: i.ingredientId, quantity: n(i.quantity) })),
       n(recipe.yieldQuantity),
       input.quantity,
     );
     const theoretical = round2(recipe.items.reduce((s, i) => s + req.find((r) => r.productId === i.ingredientId)!.required * n(i.ingredient.avgCost), 0));
-    const code = `OP-${pad(await nextSequence(tx, "OP"))}`;
+    const code = await nextDocCode(tx, "OP");
     return tx.productionOrder.create({
       data: {
         code,
@@ -187,7 +196,7 @@ export async function completeProductionOrder(input: {
       include: { product: true, lines: { include: { product: true } }, reservations: { include: { container: { include: { lot: true } } } } },
     });
     if (o.status !== "EN_PROCESO") throw new DomainError("Solo se completa una OP en proceso.");
-    if (o.product.baseUnit === "und" && !Number.isInteger(input.producedQty)) throw new DomainError("Las unidades producidas deben ser un número entero.");
+    if (o.product.baseUnit === UNIT_EACH && !Number.isInteger(input.producedQty)) throw new DomainError("Las unidades producidas deben ser un número entero.");
     const doc = { documentType: "OP" as const, documentId: o.id, documentNumber: o.code };
 
     let actualCost = 0;
@@ -221,11 +230,10 @@ export async function completeProductionOrder(input: {
 
     // Lote del producto terminado (RF-5.2) en CUARENTENA (RF-5.8)
     const now = new Date();
-    const lotNumber = await nextSequence(tx, `LOTE:${o.product.sku}:${productionLotCode(o.product.sku, now, 0)}`);
-    const lotCode = input.lotCode?.trim() || productionLotCode(o.product.sku, now, lotNumber);
+    const lotCode = input.lotCode?.trim() || productionLotCode(o.product.sku, now, await nextLotNumberOfDay(tx, o.product.sku, now));
     if (await tx.lot.findUnique({ where: { productId_code: { productId: o.productId, code: lotCode } } }))
       throw new DomainError(`Ya existe el lote ${lotCode}.`);
-    const expiryDate = o.product.shelfLifeDays ? new Date(now.getTime() + o.product.shelfLifeDays * 86_400_000) : null;
+    const expiryDate = o.product.shelfLifeDays ? new Date(now.getTime() + o.product.shelfLifeDays * MS_PER_DAY) : null;
     const lot = await tx.lot.create({
       data: { productId: o.productId, code: lotCode, expiryDate, status: "CUARENTENA", sourceType: "PRODUCCION", sourceRef: o.code, productionOrderId: o.id },
     });
@@ -253,4 +261,3 @@ export async function completeProductionOrder(input: {
 }
 
 export type Feasibility = Awaited<ReturnType<typeof checkFeasibility>>;
-export type { Tx };

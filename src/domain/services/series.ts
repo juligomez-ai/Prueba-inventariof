@@ -1,3 +1,4 @@
+import { MS_PER_DAY } from "@/shared/numbers";
 /**
  * Series de tiempo para el tablero. Funciones puras: reciben movimientos del Kardex ya valorizados.
  * - El valor del inventario en una fecha es la suma acumulada de totalValue hasta esa fecha
@@ -21,11 +22,11 @@ export const periodLabel: Record<PeriodKey, string> = { "30": "Últimos 30 días
 
 /** Divide [from, to) en cubetas: diarias para 30 días, semanales para periodos más largos. */
 export function buckets(from: Date, to: Date): Bucket[] {
-  const days = Math.round((to.getTime() - from.getTime()) / 86_400_000);
+  const days = Math.round((to.getTime() - from.getTime()) / MS_PER_DAY);
   const size = days <= 31 ? 1 : 7;
   const out: Bucket[] = [];
-  for (let t = from.getTime(); t < to.getTime(); t += size * 86_400_000)
-    out.push({ start: new Date(t), end: new Date(Math.min(t + size * 86_400_000, to.getTime())) });
+  for (let t = from.getTime(); t < to.getTime(); t += size * MS_PER_DAY)
+    out.push({ start: new Date(t), end: new Date(Math.min(t + size * MS_PER_DAY, to.getTime())) });
   return out;
 }
 

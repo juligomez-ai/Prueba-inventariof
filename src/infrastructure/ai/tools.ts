@@ -5,10 +5,10 @@ import { checkFeasibility, recipeCost } from "@/application/use-cases/production
 import { lastPrices } from "@/application/use-cases/purchasing";
 import { toBase } from "@/domain/services/units";
 import { prisma } from "@/infrastructure/database/prisma";
-import { startOfToday, stockSummary } from "@/infrastructure/database/stock";
-import { errorMessage } from "@/shared/errors";
+import { stockSummary, ACTIVE_STATUSES } from "@/infrastructure/database/stock";
+import { DomainError, errorMessage } from "@/shared/errors";
 import { HELP_TOPICS } from "@/shared/help";
-import { daysBetween, n, round2, round4 } from "@/shared/numbers";
+import { daysBetween, n, round2, round4, startOfToday, MS_PER_DAY } from "@/shared/numbers";
 
 /**
  * Herramientas del Copiloto. Cada una llama a casos de uso deterministas:
@@ -96,7 +96,7 @@ export const tools: FunctionDeclaration[] = [
 
 const bySku = async (sku: string) => {
   const p = await prisma.product.findUnique({ where: { sku: String(sku).trim().toUpperCase() } });
-  if (!p) throw new Error(`No existe el SKU ${sku}. Búscalo con buscar_producto.`);
+  if (!p) throw new DomainError(`No existe el SKU ${sku}. Búscalo con buscar_producto.`);
   return p;
 };
 
@@ -121,7 +121,7 @@ async function run(name: string, input: Input, proposals: Proposal[]) {
     case "consultar_existencias": {
       const p = await bySku(String(input.sku));
       const s = (await stockSummary(prisma, [p.id])).get(p.id) ?? { onHand: 0, reserved: 0, quarantine: 0, blocked: 0, available: 0 };
-      const lots = await prisma.lot.findMany({ where: { productId: p.id, containers: { some: { status: { in: ["SELLADO", "ABIERTO"] } } } }, include: { containers: { where: { status: { in: ["SELLADO", "ABIERTO"] } } } }, orderBy: { expiryDate: "asc" } });
+      const lots = await prisma.lot.findMany({ where: { productId: p.id, containers: { some: { status: { in: ACTIVE_STATUSES } } } }, include: { containers: { where: { status: { in: ACTIVE_STATUSES } } } }, orderBy: { expiryDate: "asc" } });
       return {
         producto: p.name, sku: p.sku, unidad: p.baseUnit,
         fisico: s.onHand, disponible: s.available, reservado: s.reserved, cuarentena: s.quarantine, bloqueado: s.blocked,
@@ -163,8 +163,8 @@ async function run(name: string, input: Input, proposals: Proposal[]) {
       const today = startOfToday();
       const days = Number(input.dias ?? 60);
       const lots = await prisma.lot.findMany({
-        where: { expiryDate: { lte: new Date(today.getTime() + days * 86_400_000) }, containers: { some: { status: { in: ["SELLADO", "ABIERTO"] } } } },
-        include: { product: true, containers: { where: { status: { in: ["SELLADO", "ABIERTO"] } } } },
+        where: { expiryDate: { lte: new Date(today.getTime() + days * MS_PER_DAY) }, containers: { some: { status: { in: ACTIVE_STATUSES } } } },
+        include: { product: true, containers: { where: { status: { in: ACTIVE_STATUSES } } } },
         orderBy: { expiryDate: "asc" },
       });
       return lots.map((l) => ({ lote: l.code, producto: l.product.name, estado: l.status, vence: l.expiryDate!.toISOString().slice(0, 10), dias: daysBetween(today, l.expiryDate!), cantidad: round4(l.containers.reduce((s, c) => s + n(c.currentQty), 0)), unidad: l.product.baseUnit }));
@@ -174,9 +174,9 @@ async function run(name: string, input: Input, proposals: Proposal[]) {
 
     case "proponer_orden_produccion": {
       const p = await bySku(String(input.sku));
-      if (p.type !== "PRODUCTO_TERMINADO") throw new Error("Solo se producen productos terminados.");
+      if (p.type !== "PRODUCTO_TERMINADO") throw new DomainError("Solo se producen productos terminados.");
       const qty = Number(input.cantidad);
-      if (!(qty > 0) || !Number.isInteger(qty)) throw new Error("La cantidad debe ser un entero mayor que 0.");
+      if (!(qty > 0) || !Number.isInteger(qty)) throw new DomainError("La cantidad debe ser un entero mayor que 0.");
       const f = await checkFeasibility(p.id, qty);
       const proposal: Proposal = {
         kind: "order", id: `prop-${proposals.length + 1}`, productId: p.id, sku: p.sku, productName: p.name, quantity: qty,
@@ -188,15 +188,15 @@ async function run(name: string, input: Input, proposals: Proposal[]) {
     }
     case "proponer_orden_compra": {
       const lines = (input.lineas as { sku: string; cantidad: number }[]) ?? [];
-      if (!lines.length) throw new Error("Indica al menos una línea.");
+      if (!lines.length) throw new DomainError("Indica al menos una línea.");
       const prices = await lastPrices();
       const groups = new Map<string, Extract<Proposal, { kind: "purchase" }>>();
       for (const l of lines) {
         const p = await bySku(l.sku);
-        if (p.type === "PRODUCTO_TERMINADO") throw new Error(`${p.name} se fabrica, no se compra.`);
-        if (!(Number(l.cantidad) > 0)) throw new Error("Las cantidades deben ser mayores que 0.");
+        if (p.type === "PRODUCTO_TERMINADO") throw new DomainError(`${p.name} se fabrica, no se compra.`);
+        if (!(Number(l.cantidad) > 0)) throw new DomainError("Las cantidades deben ser mayores que 0.");
         const supplierId = p.preferredSupplierId ?? prices.get(p.id)?.supplierId;
-        if (!supplierId) throw new Error(`${p.name} no tiene proveedor preferido; pide al usuario que lo configure.`);
+        if (!supplierId) throw new DomainError(`${p.name} no tiene proveedor preferido; pide al usuario que lo configure.`);
         const supplier = await prisma.supplier.findUniqueOrThrow({ where: { id: supplierId } });
         const g = groups.get(supplierId) ?? { kind: "purchase" as const, id: "", supplierId, supplierName: supplier.name, lines: [], total: 0, notes: (input.notas as string | undefined) || null };
         const price = round2(prices.get(p.id)?.unitCost ?? n(p.avgCost));
@@ -214,19 +214,19 @@ async function run(name: string, input: Input, proposals: Proposal[]) {
     }
     case "proponer_formula": {
       const product = await bySku(String(input.sku_producto));
-      if (product.type !== "PRODUCTO_TERMINADO") throw new Error("La fórmula debe ser de un producto terminado.");
+      if (product.type !== "PRODUCTO_TERMINADO") throw new DomainError("La fórmula debe ser de un producto terminado.");
       const yieldQ = Number(input.rendimiento);
-      if (!(yieldQ > 0)) throw new Error("El rendimiento debe ser mayor que 0.");
+      if (!(yieldQ > 0)) throw new DomainError("El rendimiento debe ser mayor que 0.");
       const items = [];
       let batch = 0;
       for (const i of (input.insumos as { sku: string; cantidad: number; unidad: string }[]) ?? []) {
         const p = await bySku(i.sku);
-        if (p.type === "PRODUCTO_TERMINADO") throw new Error(`${p.name} es producto terminado y no puede ser insumo.`);
+        if (p.type === "PRODUCTO_TERMINADO") throw new DomainError(`${p.name} es producto terminado y no puede ser insumo.`);
         const qty = round4(toBase(Number(i.cantidad), i.unidad, p.baseUnit));
         items.push({ ingredientId: p.id, sku: p.sku, name: p.name, quantity: qty, unit: p.baseUnit });
         batch += qty * n(p.avgCost);
       }
-      if (!items.length) throw new Error("La fórmula necesita al menos un insumo.");
+      if (!items.length) throw new DomainError("La fórmula necesita al menos un insumo.");
       const proposal: Proposal = {
         kind: "recipe", id: `prop-${proposals.length + 1}`, productId: product.id, productName: product.name, name: String(input.nombre),
         yieldQuantity: yieldQ, items, batchCost: round2(batch), unitCost: round2(batch / yieldQ),
@@ -241,6 +241,6 @@ async function run(name: string, input: Input, proposals: Proposal[]) {
       return (hit.length ? hit : HELP_TOPICS).map((h) => ({ tema: h.title, pasos: h.steps, pantalla: h.href }));
     }
     default:
-      throw new Error(`Herramienta desconocida: ${name}`);
+      throw new DomainError(`Herramienta desconocida: ${name}`);
   }
 }

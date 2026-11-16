@@ -2,8 +2,12 @@ import { abcFrequencyDays, classifyAbc, type AbcClass } from "@/domain/services/
 import { countAccuracyByValue, productionVariance } from "@/domain/services/kpis";
 import { buckets, flowSeries, inventoryValueSeries, pctChange, type ValuedMove } from "@/domain/services/series";
 import { prisma } from "@/infrastructure/database/prisma";
-import { startOfToday, stockSummary } from "@/infrastructure/database/stock";
-import { daysBetween, n, round2 } from "@/shared/numbers";
+import { stockSummary, ACTIVE_STATUSES } from "@/infrastructure/database/stock";
+import { addDays, daysBetween, MS_PER_DAY, n, round2, startOfToday } from "@/shared/numbers";
+
+/** Las alertas avisan lotes que vencen en los próximos 90 días; en rojo los de 30 o menos (RF-15.2). */
+const EXPIRY_ALERT_DAYS = 90;
+const EXPIRY_URGENT_DAYS = 30;
 
 /** Existencias valorizadas por producto (RF-3.1, RF-4.2). */
 export async function inventoryRows() {
@@ -40,15 +44,15 @@ export async function alerts(): Promise<AlertItem[]> {
       });
   }
   const lots = await prisma.lot.findMany({
-    where: { expiryDate: { lte: new Date(today.getTime() + 90 * 86_400_000) }, status: { not: "BLOQUEADO" }, containers: { some: { status: { in: ["SELLADO", "ABIERTO"] } } } },
+    where: { expiryDate: { lte: addDays(today, EXPIRY_ALERT_DAYS) }, status: { not: "BLOQUEADO" }, containers: { some: { status: { in: ACTIVE_STATUSES } } } },
     include: { product: true },
     orderBy: { expiryDate: "asc" },
   });
   for (const l of lots) {
     const d = daysBetween(today, l.expiryDate!);
-    out.push({ kind: "vencimiento", tone: d <= 30 ? "red" : "yellow", text: `Lote ${l.code} de ${l.product.name} ${d < 0 ? `venció hace ${-d} días` : `vence en ${d} días`}`, href: `/lotes/${l.id}` });
+    out.push({ kind: "vencimiento", tone: d <= EXPIRY_URGENT_DAYS ? "red" : "yellow", text: `Lote ${l.code} de ${l.product.name} ${d < 0 ? `venció hace ${-d} días` : `vence en ${d} días`}`, href: `/lotes/${l.id}` });
   }
-  const q = await prisma.lot.findMany({ where: { status: "CUARENTENA", containers: { some: { status: { in: ["SELLADO", "ABIERTO"] } } } }, include: { product: true } });
+  const q = await prisma.lot.findMany({ where: { status: "CUARENTENA", containers: { some: { status: { in: ACTIVE_STATUSES } } } }, include: { product: true } });
   for (const l of q)
     out.push({ kind: "cuarentena", tone: "yellow", text: `Lote ${l.code} de ${l.product.name} pendiente de liberación (${daysBetween(l.createdAt, new Date())} días)`, href: "/calidad" });
   const late = await prisma.purchaseOrder.findMany({
@@ -74,20 +78,20 @@ export async function dashboard(periodDays = 30) {
   for (const r of rows) byType[r.product.type] += r.value;
   const today = startOfToday();
   const now = new Date();
-  const end = new Date(today.getTime() + 86_400_000); // fin de hoy (exclusivo)
-  const from = new Date(end.getTime() - periodDays * 86_400_000);
-  const prevFrom = new Date(from.getTime() - periodDays * 86_400_000);
-  const in30 = new Date(today.getTime() + 30 * 86_400_000);
+  const end = new Date(today.getTime() + MS_PER_DAY); // fin de hoy (exclusivo)
+  const from = new Date(end.getTime() - periodDays * MS_PER_DAY);
+  const prevFrom = new Date(from.getTime() - periodDays * MS_PER_DAY);
+  const in30 = addDays(today, EXPIRY_URGENT_DAYS);
 
   const [inProgress, completedAll, lossesAll, expiring, toRelease, toDispatch, countLinesAll, moves] = await Promise.all([
     prisma.productionOrder.count({ where: { status: "EN_PROCESO" } }),
     prisma.productionOrder.findMany({ where: { status: "COMPLETADA", completedAt: { gte: prevFrom } } }),
     prisma.stockMovement.findMany({ where: { type: { in: ["BAJA", "AJUSTE_SAL"] }, createdAt: { gte: prevFrom } } }),
     prisma.lot.findMany({
-      where: { expiryDate: { lte: in30 }, status: { not: "BLOQUEADO" }, containers: { some: { status: { in: ["SELLADO", "ABIERTO"] } } } },
-      include: { product: true, containers: { where: { status: { in: ["SELLADO", "ABIERTO"] } } } },
+      where: { expiryDate: { lte: in30 }, status: { not: "BLOQUEADO" }, containers: { some: { status: { in: ACTIVE_STATUSES } } } },
+      include: { product: true, containers: { where: { status: { in: ACTIVE_STATUSES } } } },
     }),
-    prisma.lot.findMany({ where: { status: "CUARENTENA", containers: { some: { status: { in: ["SELLADO", "ABIERTO"] } } } }, orderBy: { createdAt: "asc" } }),
+    prisma.lot.findMany({ where: { status: "CUARENTENA", containers: { some: { status: { in: ACTIVE_STATUSES } } } }, orderBy: { createdAt: "asc" } }),
     prisma.dispatch.groupBy({ by: ["status"], where: { status: { in: ["PENDIENTE", "EN_ALISTAMIENTO", "DESPACHADO", "EN_TRANSITO", "NOVEDAD"] } }, _count: true }),
     prisma.cycleCountLine.findMany({ where: { count: { status: "APROBADO", approvedAt: { gte: prevFrom } } }, include: { product: true, count: true } }),
     prisma.stockMovement.findMany({ select: { createdAt: true, totalValue: true, type: true } }),
@@ -112,11 +116,11 @@ export async function dashboard(periodDays = 30) {
 
   // Series para las gráficas
   const valued: ValuedMove[] = moves.map((m) => ({ at: m.createdAt, value: n(m.totalValue), isTransfer: m.type === "TRASLADO_ENT" || m.type === "TRASLADO_SAL" }));
-  const bs = buckets(from, end);
-  const prevBs = bs.map((b) => ({ start: new Date(b.start.getTime() - periodDays * 86_400_000), end: new Date(b.end.getTime() - periodDays * 86_400_000) }));
-  const valueSeries = inventoryValueSeries(valued, bs);
-  const valuePrevSeries = inventoryValueSeries(valued, prevBs);
-  const flows = flowSeries(valued, bs);
+  const periodBuckets = buckets(from, end);
+  const prevBuckets = periodBuckets.map((b) => ({ start: new Date(b.start.getTime() - periodDays * MS_PER_DAY), end: new Date(b.end.getTime() - periodDays * MS_PER_DAY) }));
+  const valueSeries = inventoryValueSeries(valued, periodBuckets);
+  const valuePrevSeries = inventoryValueSeries(valued, prevBuckets);
+  const flows = flowSeries(valued, periodBuckets);
   const valueAtStart = inventoryValueSeries(valued, [{ start: from, end: from }])[0];
 
   const supplies = rows.filter((r) => r.product.type !== "PRODUCTO_TERMINADO" && n(r.product.minStock) > 0 && r.available <= n(r.product.minStock));
@@ -149,8 +153,8 @@ export async function dashboard(periodDays = 30) {
     toRelease: { count: toRelease.length, oldestDays: toRelease[0] ? daysBetween(toRelease[0].createdAt, new Date()) : 0 },
     toDispatch: { pending: dispatchCount(["PENDIENTE", "EN_ALISTAMIENTO"]), onTheWay: dispatchCount(["DESPACHADO", "EN_TRANSITO"]), incidents: dispatchCount(["NOVEDAD"]) },
     charts: {
-      labels: bs.map((b) => b.start.toISOString()),
-      weekly: bs.length > 0 && bs[0].end.getTime() - bs[0].start.getTime() > 86_400_000,
+      labels: periodBuckets.map((b) => b.start.toISOString()),
+      weekly: periodBuckets.length > 0 && periodBuckets[0].end.getTime() - periodBuckets[0].start.getTime() > MS_PER_DAY,
       value: valueSeries,
       valuePrev: valuePrevSeries,
       inflow: flows.map((f) => f.inflow),
@@ -170,7 +174,7 @@ export async function abcSuggestions(warehouseId?: string) {
   });
   const last = new Map(lastCounted.map((l) => [l.productId, l._max.scannedAt]));
   const inWarehouse = warehouseId
-    ? new Set((await prisma.container.findMany({ where: { warehouseId, status: { in: ["SELLADO", "ABIERTO"] } }, select: { productId: true } })).map((c) => c.productId))
+    ? new Set((await prisma.container.findMany({ where: { warehouseId, status: { in: ACTIVE_STATUSES } }, select: { productId: true } })).map((c) => c.productId))
     : null;
   const today = new Date();
   return rows

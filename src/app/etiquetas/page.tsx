@@ -2,6 +2,7 @@ import { ContainerStatusBadge } from "@/components/badges";
 import { Card, CardBody, CardHeader, Notice, PageHeader, Select, Table, Td, Th } from "@/components/ui";
 import { prisma } from "@/infrastructure/database/prisma";
 import { fmtDate, fmtQty, n } from "@/shared/numbers";
+import { ACTIVE_STATUSES } from "@/infrastructure/database/stock";
 
 /** Impresión de etiquetas térmicas 50 × 25 mm (M5.1): por bulto (serial) o por SKU. */
 export default async function Labels(props: PageProps<"/etiquetas">) {
@@ -9,7 +10,7 @@ export default async function Labels(props: PageProps<"/etiquetas">) {
   const products = await prisma.product.findMany({ where: { archived: false }, orderBy: { sku: "asc" } });
   const productId = typeof sp.producto === "string" ? sp.producto : products[0]?.id;
   const containers = productId
-    ? await prisma.container.findMany({ where: { productId, status: { in: ["SELLADO", "ABIERTO"] } }, include: { lot: true, warehouse: true, product: true }, orderBy: { serial: "asc" } })
+    ? await prisma.container.findMany({ where: { productId, status: { in: ACTIVE_STATUSES } }, include: { lot: true, warehouse: true, product: true }, orderBy: { serial: "asc" } })
     : [];
   return (
     <>

@@ -1,10 +1,13 @@
 import type { EstadoEnvio } from "@prisma/client";
 import { splitIntoCount } from "@/domain/services/codes";
-import { inTransaction, nextSequence, pad, prisma, type Tx } from "@/infrastructure/database/prisma";
-import { postEntry } from "@/infrastructure/database/stock";
+import { inTransaction, nextDocCode, prisma, type Tx } from "@/infrastructure/database/prisma";
+import { findOrCreateLot, postEntry } from "@/infrastructure/database/stock";
 import { DomainError } from "@/shared/errors";
-import { n, round4 } from "@/shared/numbers";
+import { n, round4, MS_PER_DAY, QTY_EPSILON } from "@/shared/numbers";
 import { CURRENT_USER } from "@/shared/user";
+
+/** IVA general en Colombia (S1): se usa cuando la línea no trae su propia tarifa. */
+const DEFAULT_VAT_PCT = 19;
 
 export interface PurchaseLineInput {
   productId: string;
@@ -38,11 +41,11 @@ export async function createPurchaseOrder(input: {
       if (l.unitPrice < 0) throw new DomainError("El precio no puede ser negativo.");
       const { product, factor } = await resolveFactor(tx, l.productId, l.unit);
       if (product.type === "PRODUCTO_TERMINADO") throw new DomainError(`${product.name} es producto terminado: se fabrica, no se compra.`);
-      resolved.push({ productId: l.productId, quantity: l.quantity, unit: l.unit, factor, unitPrice: l.unitPrice, taxRate: l.taxRate ?? 19 });
+      resolved.push({ productId: l.productId, quantity: l.quantity, unit: l.unit, factor, unitPrice: l.unitPrice, taxRate: l.taxRate ?? DEFAULT_VAT_PCT });
     }
-    const code = `OC-${pad(await nextSequence(tx, "OC"))}`;
+    const code = await nextDocCode(tx, "OC");
     const expectedDate =
-      input.expectedDate ?? new Date(Date.now() + supplier.leadTimeDays * 86_400_000);
+      input.expectedDate ?? new Date(Date.now() + supplier.leadTimeDays * MS_PER_DAY);
     return tx.purchaseOrder.create({
       data: { code, supplierId: supplier.id, expectedDate, notes: input.notes, createdByAI: input.createdByAI ?? false, lines: { create: resolved } },
     });
@@ -93,7 +96,7 @@ export async function receivePurchaseOrder(input: {
     });
     if (!["ENVIADA", "EN_TRANSITO", "RECIBIDA_PARCIAL"].includes(po.status))
       throw new DomainError("Solo se reciben OCs enviadas o en tránsito.");
-    const code = `REC-${pad(await nextSequence(tx, "REC"))}`;
+    const code = await nextDocCode(tx, "REC");
     const receipt = await tx.receipt.create({
       data: { code, orderId: po.id, supplierRemission: remission, warehouseId: input.warehouseId, notes: input.notes, userName: CURRENT_USER },
     });
@@ -105,20 +108,16 @@ export async function receivePurchaseOrder(input: {
       const factor = n(line.factor);
       const baseQty = round4(l.quantity * factor);
       const pendingBase = round4(n(line.quantity) * factor - n(line.receivedQty));
-      if (baseQty > pendingBase + 1e-9)
+      if (baseQty > pendingBase + QTY_EPSILON)
         throw new DomainError(`${p.name}: se intenta recibir ${baseQty} ${p.baseUnit} y solo quedan ${pendingBase} pendientes.`);
       if (l.containers < 1 || !Number.isInteger(l.containers)) throw new DomainError(`${p.name}: el número de bultos debe ser un entero ≥ 1.`);
 
+      const lotCode = l.lotCode?.trim() || null;
       let lotId: string | null = null;
       if (p.tracksLot) {
-        const lotCode = l.lotCode?.trim();
         if (!lotCode) throw new DomainError(`${p.name} controla lote: indica el lote del proveedor.`);
         if (p.tracksExpiry && !l.expiryDate) throw new DomainError(`${p.name} controla vencimiento: indica la fecha.`);
-        const lot = await tx.lot.upsert({
-          where: { productId_code: { productId: p.id, code: lotCode } },
-          create: { productId: p.id, code: lotCode, supplierLot: lotCode, expiryDate: l.expiryDate, sourceType: "COMPRA", sourceRef: po.code, supplierId: po.supplierId },
-          update: {},
-        });
+        const lot = await findOrCreateLot(tx, p.id, lotCode, l.expiryDate, { supplierLot: lotCode, sourceType: "COMPRA", sourceRef: po.code, supplierId: po.supplierId });
         lotId = lot.id;
       }
       // RN-6.1: costo sin IVA convertido a la unidad base
@@ -143,12 +142,12 @@ export async function receivePurchaseOrder(input: {
       });
       await tx.purchaseOrderLine.update({ where: { id: line.id }, data: { receivedQty: { increment: baseQty } } });
       await tx.receiptLine.create({
-        data: { receiptId: receipt.id, lineId: line.id, quantity: baseQty, lotCode: l.lotCode, expiryDate: l.expiryDate, containers: l.containers },
+        data: { receiptId: receipt.id, lineId: line.id, quantity: baseQty, lotCode, expiryDate: l.expiryDate, containers: l.containers },
       });
     }
 
     const updated = await tx.purchaseOrderLine.findMany({ where: { orderId: po.id } });
-    const complete = updated.every((x) => n(x.receivedQty) >= n(x.quantity) * n(x.factor) - 1e-9);
+    const complete = updated.every((x) => n(x.receivedQty) >= n(x.quantity) * n(x.factor) - QTY_EPSILON);
     await tx.purchaseOrder.update({ where: { id: po.id }, data: { status: complete ? "RECIBIDA" : "RECIBIDA_PARCIAL" } });
     return receipt;
   });

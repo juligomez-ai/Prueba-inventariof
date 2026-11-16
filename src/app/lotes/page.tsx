@@ -5,6 +5,7 @@ import { Card, Empty, PageHeader, Table, Td, Th } from "@/components/ui";
 import { prisma } from "@/infrastructure/database/prisma";
 import { lotStatusLabel } from "@/shared/labels";
 import { fmtDate, fmtQty, n } from "@/shared/numbers";
+import { ACTIVE_STATUSES } from "@/infrastructure/database/stock";
 
 export default async function Lots(props: PageProps<"/lotes">) {
   const sp = await props.searchParams;
@@ -15,7 +16,7 @@ export default async function Lots(props: PageProps<"/lotes">) {
       ...(status ? { status } : {}),
       ...(q ? { OR: [{ code: { contains: q, mode: "insensitive" } }, { product: { name: { contains: q, mode: "insensitive" } } }] } : {}),
     },
-    include: { product: true, supplier: true, containers: { where: { status: { in: ["SELLADO", "ABIERTO"] } } } },
+    include: { product: true, supplier: true, containers: { where: { status: { in: ACTIVE_STATUSES } } } },
     orderBy: [{ expiryDate: "asc" }],
   });
   return (

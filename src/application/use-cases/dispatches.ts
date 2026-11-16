@@ -1,12 +1,14 @@
 import { allocate } from "@/domain/services/allocation";
-import { inTransaction, nextSequence, pad, prisma } from "@/infrastructure/database/prisma";
+import { inTransaction, nextDocCode, prisma } from "@/infrastructure/database/prisma";
 import { availableContainers, postExit } from "@/infrastructure/database/stock";
 import { DomainError } from "@/shared/errors";
-import { n } from "@/shared/numbers";
+import { n, MS_PER_DAY } from "@/shared/numbers";
 import { CURRENT_USER } from "@/shared/user";
 
 /** RN-12.1: no se despachan lotes con menos de estos días de vida útil. */
 export const MIN_SHELF_LIFE_DAYS = 90;
+/** Tamaño máximo de la remisión firmada (foto o PDF). En base64 ocupa ~4/3 de su peso. */
+export const MAX_PROOF_BYTES = 2_000_000;
 
 export async function createDispatch(input: {
   customerName: string;
@@ -27,7 +29,7 @@ export async function createDispatch(input: {
       if (p.type !== "PRODUCTO_TERMINADO") throw new DomainError(`${p.name} no es producto terminado.`);
     }
     // El número de la remisión de entrega se asigna al crear el despacho (REM-0001)
-    const code = `REM-${pad(await nextSequence(tx, "REM"))}`;
+    const code = await nextDocCode(tx, "REM");
     return tx.dispatch.create({ data: { ...input, code, lines: { create: lines } } });
   });
 }
@@ -37,7 +39,7 @@ export async function startPicking(dispatchId: string) {
   return inTransaction(async (tx) => {
     const d = await tx.dispatch.findUniqueOrThrow({ where: { id: dispatchId }, include: { lines: { include: { product: true } } } });
     if (d.status !== "PENDIENTE") throw new DomainError("El despacho ya fue alistado.");
-    const minDate = new Date(Date.now() + MIN_SHELF_LIFE_DAYS * 86_400_000);
+    const minDate = new Date(Date.now() + MIN_SHELF_LIFE_DAYS * MS_PER_DAY);
     const shortages: string[] = [];
     for (const l of d.lines) {
       const containers = (await availableContainers(tx, l.productId)).filter((c) => !c.expiryDate || c.expiryDate >= minDate);
@@ -82,13 +84,12 @@ export async function shipDispatch(input: {
   trackingNumber: string;
   eta?: Date | null;
   freightCost?: number | null;
-  requireAllPicked?: boolean;
 }) {
   if (!input.trackingNumber.trim()) throw new DomainError("El número de guía es obligatorio.");
   return inTransaction(async (tx) => {
     const d = await tx.dispatch.findUniqueOrThrow({ where: { id: input.dispatchId }, include: { allocations: { include: { container: true } } } });
     if (d.status !== "EN_ALISTAMIENTO") throw new DomainError("Primero alista el despacho.");
-    if (input.requireAllPicked !== false && d.allocations.some((a) => !a.picked))
+    if (d.allocations.some((a) => !a.picked))
       throw new DomainError("Faltan cajas por verificar con el escáner.");
     const doc = {
       documentType: "REM" as const,
@@ -120,7 +121,7 @@ export async function shipDispatch(input: {
 /** Prueba de entrega: remisión firmada (RF-12.5c). */
 export async function attachProof(dispatchId: string, dataUrl: string) {
   if (!dataUrl.startsWith("data:")) throw new DomainError("Archivo inválido.");
-  if (dataUrl.length > 3_000_000) throw new DomainError("El archivo es muy grande (máx. 2 MB).");
+  if (dataUrl.length > Math.ceil((MAX_PROOF_BYTES * 4) / 3) + 100) throw new DomainError("El archivo supera 2 MB.");
   return prisma.dispatch.update({ where: { id: dispatchId }, data: { proofDataUrl: dataUrl } });
 }
 

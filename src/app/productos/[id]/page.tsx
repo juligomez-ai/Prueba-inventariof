@@ -7,7 +7,7 @@ import { CostHistoryChart } from "@/components/cost-history-chart";
 import { ContainerStatusBadge, ExpiryBadge, LotStatusBadge, MovementBadge, ProductTypeBadge, StockLight } from "@/components/badges";
 import { Badge, ButtonLink, Card, CardHeader, Empty, PageHeader, Stat, Table, Td, Th } from "@/components/ui";
 import { prisma } from "@/infrastructure/database/prisma";
-import { stockSummary } from "@/infrastructure/database/stock";
+import { stockSummary, ACTIVE_STATUSES } from "@/infrastructure/database/stock";
 import { documentHref, movementLabel } from "@/shared/labels";
 import { fmtDate, fmtDateTime, fmtMoney, fmtPct, fmtQty, n } from "@/shared/numbers";
 
@@ -19,7 +19,7 @@ export default async function ProductPage(props: PageProps<"/productos/[id]">) {
       preferredSupplier: true,
       conversions: true,
       recipe: true,
-      containers: { where: { status: { in: ["SELLADO", "ABIERTO"] } }, include: { lot: true, warehouse: true, reservations: { where: { order: { status: "EN_PROCESO" } }, include: { order: true } } }, orderBy: { serial: "asc" } },
+      containers: { where: { status: { in: ACTIVE_STATUSES } }, include: { lot: true, warehouse: true, reservations: { where: { order: { status: "EN_PROCESO" } }, include: { order: true } } }, orderBy: { serial: "asc" } },
       movements: { orderBy: { number: "desc" }, take: 12, include: { lot: true, warehouse: true, container: true } },
     },
   });

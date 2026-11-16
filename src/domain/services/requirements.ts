@@ -1,4 +1,4 @@
-import { round4 } from "@/shared/numbers";
+import { QTY_EPSILON, round4 } from "@/shared/numbers";
 
 export interface RecipeLine {
   productId: string;
@@ -26,6 +26,6 @@ export function maxProducible(
   }
   if (!Number.isFinite(max)) return 0;
   // Tolerancia por redondeo de decimales
-  const v = max + 1e-9;
+  const v = max + QTY_EPSILON;
   return wholeUnits ? Math.floor(v) : Math.floor(v * 1000) / 1000;
 }

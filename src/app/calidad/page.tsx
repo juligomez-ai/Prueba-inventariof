@@ -4,13 +4,14 @@ import { LotStatusForm } from "@/components/lot-status-form";
 import { Card, CardBody, CardHeader, Empty, Notice, PageHeader, Table, Td, Th } from "@/components/ui";
 import { prisma } from "@/infrastructure/database/prisma";
 import { daysBetween, fmtDateTime, fmtQty, n } from "@/shared/numbers";
+import { ACTIVE_STATUSES } from "@/infrastructure/database/stock";
 
 /** Pendientes de liberación (RF-5.8, RF-5.10) e historial de decisiones de calidad. */
 export default async function Quality() {
   const [pending, history] = await Promise.all([
     prisma.lot.findMany({
       where: { status: "CUARENTENA" },
-      include: { product: true, productionOrder: true, containers: { where: { status: { in: ["SELLADO", "ABIERTO"] } } } },
+      include: { product: true, productionOrder: true, containers: { where: { status: { in: ACTIVE_STATUSES } } } },
       orderBy: { createdAt: "asc" },
     }),
     prisma.lotStatusChange.findMany({ where: { NOT: { fromStatus: "CUARENTENA", toStatus: "CUARENTENA" } }, include: { lot: { include: { product: true } } }, orderBy: { createdAt: "desc" }, take: 20 }),

@@ -25,7 +25,7 @@ export async function inTransaction<T>(fn: (tx: Tx) => Promise<T>, retries = 3):
   }
 }
 
-/** Consecutivo atómico (OP-0001, REC-0001, MZ-261112-001…). */
+/** Consecutivo atómico por nombre: documentos (OP, OC, REM…), seriales de bultos y lotes de producción del día. */
 export async function nextSequence(tx: Tx, name: string): Promise<number> {
   const seq = await tx.sequence.upsert({
     where: { name },
@@ -36,3 +36,8 @@ export async function nextSequence(tx: Tx, name: string): Promise<number> {
 }
 
 export const pad = (v: number, size = 4) => String(v).padStart(size, "0");
+
+/** Siguiente número de un documento con su prefijo: OC-0001, OP-0001, REM-0001… */
+export async function nextDocCode(tx: Tx, prefix: string) {
+  return `${prefix}-${pad(await nextSequence(tx, prefix))}`;
+}

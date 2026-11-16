@@ -174,7 +174,9 @@ export function createSimulator(ctx: Ctx) {
     const d = await at(date, async () => {
       const r = await dispatches.createDispatch({ ...pick(CUSTOMERS), salesRef: `FE-${Math.floor(1000 + rand() * 8000)}`, lines: [{ productId: pt.id, quantity: q }] });
       await dispatches.startPicking(r.id);
-      await dispatches.shipDispatch({ dispatchId: r.id, carrierId: pick(carriers).id, trackingNumber: String(Math.floor(7e11 + rand() * 1e11)), eta: new Date(date.getTime() + 2 * day), freightCost: 12000 + Math.round(rand() * 10) * 1000, requireAllPicked: false });
+      // La simulación da por escaneadas las cajas asignadas, como haría la persona de bodega
+      await prisma.dispatchAllocation.updateMany({ where: { dispatchId: r.id }, data: { picked: true } });
+      await dispatches.shipDispatch({ dispatchId: r.id, carrierId: pick(carriers).id, trackingNumber: String(Math.floor(7e11 + rand() * 1e11)), eta: new Date(date.getTime() + 2 * day), freightCost: 12000 + Math.round(rand() * 10) * 1000 });
       return r;
     });
     const sh = await prisma.shipment.findFirstOrThrow({ where: { dispatchId: d.id } });

@@ -125,5 +125,7 @@ export async function runCopilot(history: Content[], userText: string): Promise<
     messages.push({ role: "user", parts: results });
   }
 
+  // Si se agotaron las rondas de herramientas sin texto final, se responde algo útil en vez de un globo vacío
+  if (!reply) reply = "No alcancé a terminar la consulta. Intenta con una pregunta más concreta.";
   return { messages, reply, proposals, toolCalls, model: MODEL_CHAIN[modelIndex] };
 }

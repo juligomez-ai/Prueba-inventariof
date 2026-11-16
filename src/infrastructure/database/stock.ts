@@ -1,9 +1,9 @@
-import type { OrigenLote, TipoDocumento, TipoMovimiento } from "@prisma/client";
+import type { EstadoBulto, OrigenLote, Prisma, TipoDocumento, TipoMovimiento } from "@prisma/client";
 import { type AllocatableContainer } from "@/domain/services/allocation";
 import { formatSerial } from "@/domain/services/codes";
 import { weightedAverage } from "@/domain/services/weightedAverageCost";
 import { DomainError } from "@/shared/errors";
-import { n, round2, round4 } from "@/shared/numbers";
+import { fmtDate, MS_PER_DAY, n, QTY_EPSILON, round2, round4, startOfToday } from "@/shared/numbers";
 import { CURRENT_USER } from "@/shared/user";
 import { nextSequence, type Db, type Tx } from "./prisma";
 
@@ -23,12 +23,37 @@ export interface DocRef {
   reason?: string | null;
 }
 
-const ACTIVE = { status: { in: ["SELLADO", "ABIERTO"] as ("SELLADO" | "ABIERTO")[] } };
+/** Un bulto cuenta en inventario mientras está sellado o abierto (no vacío ni dado de baja). */
+export const ACTIVE_STATUSES: EstadoBulto[] = ["SELLADO", "ABIERTO"];
+const ACTIVE = { status: { in: ACTIVE_STATUSES } };
+/** Lo comprometido de un bulto: reservas de órdenes en proceso y asignaciones de despachos sin despachar. */
+const OPEN_DISPATCH = { status: { in: ["PENDIENTE", "EN_ALISTAMIENTO"] as ("PENDIENTE" | "EN_ALISTAMIENTO")[] } };
+type Committed = { quantity: Prisma.Decimal };
+const reservedQty = (c: { reservations: Committed[]; allocations: Committed[] }) =>
+  [...c.reservations, ...c.allocations].reduce((s, r) => s + n(r.quantity), 0);
 
 /** Saldo físico total del producto (todas las bodegas, lotes y estados de lote). */
 export async function productBalance(db: Db, productId: string) {
   const agg = await db.container.aggregate({ where: { productId, ...ACTIVE }, _sum: { currentQty: true } });
   return n(agg._sum.currentQty);
+}
+
+/**
+ * Busca un lote por su código o lo crea. Un lote tiene una sola fecha de vencimiento:
+ * si llega de nuevo con otra fecha, se rechaza en vez de conservar la anterior en silencio.
+ */
+export async function findOrCreateLot(
+  tx: Tx,
+  productId: string,
+  code: string,
+  expiryDate: Date | null | undefined,
+  data: Omit<Prisma.LotUncheckedCreateInput, "productId" | "code" | "expiryDate">,
+) {
+  const existing = await tx.lot.findUnique({ where: { productId_code: { productId, code } } });
+  if (!existing) return tx.lot.create({ data: { productId, code, expiryDate, ...data } });
+  if (expiryDate && existing.expiryDate && Math.abs(existing.expiryDate.getTime() - expiryDate.getTime()) >= MS_PER_DAY / 2)
+    throw new DomainError(`El lote ${code} ya existe con vencimiento ${fmtDate(existing.expiryDate)}. Revisa la fecha o el código del lote.`);
+  return existing;
 }
 
 async function nextMovementNumber(tx: Tx) {
@@ -129,7 +154,7 @@ export async function postExit(
   const qty = round4(args.quantity);
   const current = n(c.currentQty);
   if (qty <= 0) throw new DomainError("La cantidad debe ser mayor que cero.");
-  if (c.status === "VACIO" || c.status === "DADO_DE_BAJA" || qty > current + 1e-9)
+  if (c.status === "VACIO" || c.status === "DADO_DE_BAJA" || qty > current + QTY_EPSILON)
     throw new DomainError(`El bulto ${c.serial} solo tiene ${current} ${c.product.baseUnit}.`);
 
   const balance = await productBalance(tx, c.productId);
@@ -202,7 +227,7 @@ export async function transferContainer(tx: Tx, containerId: string, toWarehouse
   if (c.warehouseId === toWarehouseId) throw new DomainError("La bodega destino es la misma de origen.");
   const current = n(c.currentQty);
   const qty = round4(quantity);
-  if (qty <= 0 || qty > current + 1e-9) throw new DomainError(`El bulto ${c.serial} solo tiene ${current} ${c.product.baseUnit}.`);
+  if (qty <= 0 || qty > current + QTY_EPSILON) throw new DomainError(`El bulto ${c.serial} solo tiene ${current} ${c.product.baseUnit}.`);
   const avg = n(c.product.avgCost);
   const balance = await productBalance(tx, c.productId);
   const base = {
@@ -218,7 +243,7 @@ export async function transferContainer(tx: Tx, containerId: string, toWarehouse
   };
 
   let target = c;
-  if (qty >= current - 1e-9) {
+  if (qty >= current - QTY_EPSILON) {
     // Bulto completo: cambia de bodega y conserva su serial.
     await tx.container.update({ where: { id: c.id }, data: { warehouseId: toWarehouseId } });
   } else {
@@ -250,7 +275,7 @@ export async function transferContainer(tx: Tx, containerId: string, toWarehouse
       totalValue: round2(-qty * avg),
     },
   });
-  const inn = await tx.stockMovement.create({
+  const inbound = await tx.stockMovement.create({
     data: {
       ...base,
       number: await nextMovementNumber(tx),
@@ -263,7 +288,7 @@ export async function transferContainer(tx: Tx, containerId: string, toWarehouse
       relatedMovementId: out.id,
     },
   });
-  await tx.stockMovement.update({ where: { id: out.id }, data: { relatedMovementId: inn.id } });
+  await tx.stockMovement.update({ where: { id: out.id }, data: { relatedMovementId: inbound.id } });
   return target;
 }
 
@@ -299,12 +324,12 @@ export async function availableContainers(
       lot: true,
       reservations: { where: { order: { status: "EN_PROCESO" }, ...(opts.excludeOrderId ? { orderId: { not: opts.excludeOrderId } } : {}) } },
       allocations: {
-        where: { dispatch: { status: { in: ["PENDIENTE", "EN_ALISTAMIENTO"] } }, ...(opts.excludeDispatchId ? { dispatchId: { not: opts.excludeDispatchId } } : {}) },
+        where: { dispatch: OPEN_DISPATCH, ...(opts.excludeDispatchId ? { dispatchId: { not: opts.excludeDispatchId } } : {}) },
       },
     },
   });
   return rows.map((c) => {
-    const reserved = c.reservations.reduce((s, r) => s + n(r.quantity), 0) + c.allocations.reduce((s, a) => s + n(a.quantity), 0);
+    const reserved = reservedQty(c);
     return {
       id: c.id,
       serial: c.serial,
@@ -325,12 +350,6 @@ export async function availableQty(db: Db, productId: string, opts?: Parameters<
   return round4(cs.reduce((s, c) => s + c.available, 0));
 }
 
-export function startOfToday() {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
-
 /** Resumen de existencias por producto (RF-3.1). */
 export async function stockSummary(db: Db, productIds?: string[]) {
   const today = startOfToday();
@@ -339,14 +358,14 @@ export async function stockSummary(db: Db, productIds?: string[]) {
     include: {
       lot: true,
       reservations: { where: { order: { status: "EN_PROCESO" } } },
-      allocations: { where: { dispatch: { status: { in: ["PENDIENTE", "EN_ALISTAMIENTO"] } } } },
+      allocations: { where: { dispatch: OPEN_DISPATCH } },
     },
   });
   const map = new Map<string, { onHand: number; reserved: number; quarantine: number; blocked: number; available: number }>();
   for (const c of containers) {
     const s = map.get(c.productId) ?? { onHand: 0, reserved: 0, quarantine: 0, blocked: 0, available: 0 };
     const q = n(c.currentQty);
-    const reserved = c.reservations.reduce((a, r) => a + n(r.quantity), 0) + c.allocations.reduce((a, r) => a + n(r.quantity), 0);
+    const reserved = reservedQty(c);
     s.onHand += q;
     s.reserved += reserved;
     const expired = c.lot?.expiryDate && c.lot.expiryDate < today;

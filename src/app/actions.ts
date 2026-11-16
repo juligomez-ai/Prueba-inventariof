@@ -1,15 +1,17 @@
 "use server";
 
-import type { EstadoEnvio, MotivoAjuste, TipoBodega, TipoProducto } from "@prisma/client";
+import { EstadoEnvio, MotivoAjuste, TipoBodega, TipoProducto } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { z } from "zod";
 import * as catalog from "@/application/use-cases/catalog";
 import * as dispatches from "@/application/use-cases/dispatches";
 import * as inv from "@/application/use-cases/inventory";
 import * as production from "@/application/use-cases/production";
 import * as purchasing from "@/application/use-cases/purchasing";
 import { productionExpiryWarning } from "@/application/use-cases/traceability";
-import { errorMessage } from "@/shared/errors";
+import { DomainError, errorMessage } from "@/shared/errors";
+import { parseLocalDate } from "@/shared/numbers";
 
 // Fase 1 sin autenticación: un solo usuario administrador (S9).
 
@@ -39,16 +41,22 @@ const num = (fd: FormData, k: string) => {
 };
 const req = (fd: FormData, k: string, label: string) => {
   const v = num(fd, k);
-  if (v === null || Number.isNaN(v)) throw new Error(`${label}: ingresa un número válido.`);
+  if (v === null || Number.isNaN(v)) throw new DomainError(`${label}: ingresa un número válido.`);
   return v;
 };
 const date = (fd: FormData, k: string) => {
   const v = str(fd, k);
-  return v ? new Date(`${v}T12:00:00-05:00`) : null;
+  return v ? parseLocalDate(v) : null;
 };
 const bool = (fd: FormData, k: string) => fd.get(k) === "on" || fd.get(k) === "true";
 const all = (fd: FormData, k: string) => fd.getAll(k).map((v) => String(v).trim());
-const toNum = (v: string) => (v === "" ? NaN : Number(v.replace(",", ".")));
+const toNum = (v: string) => (v === "" ? NaN : Number(v.replace(",", "."))); // a diferencia de num(): "" → NaN
+/** Valor de una lista cerrada (enum): las acciones son endpoints públicos, no se confía en el formulario. */
+const oneOf = <T extends string>(fd: FormData, k: string, values: Record<string, T>, label: string): T => {
+  const v = str(fd, k);
+  if (!(Object.values(values) as string[]).includes(v)) throw new DomainError(`${label}: valor no válido.`);
+  return v as T;
+};
 
 // ───────────────────────── Catálogo ─────────────────────────
 
@@ -63,7 +71,7 @@ export async function saveProductAction(_: ActionResult | null, fd: FormData) {
         name: str(fd, "name"),
         shortName: opt(fd, "shortName"),
         category: str(fd, "category") || "General",
-        type: str(fd, "type") as TipoProducto,
+        type: oneOf(fd, "type", TipoProducto, "Tipo de producto"),
         baseUnit: str(fd, "baseUnit"),
         barcode: opt(fd, "barcode"),
         tracksLot: bool(fd, "tracksLot"),
@@ -94,7 +102,7 @@ export async function archiveProductAction(_: ActionResult | null, fd: FormData)
 
 export async function saveWarehouseAction(_: ActionResult | null, fd: FormData) {
   return run(async () => {
-    await catalog.saveWarehouse({ code: str(fd, "code"), name: str(fd, "name"), type: str(fd, "type") as TipoBodega, active: true }, opt(fd, "id") ?? undefined);
+    await catalog.saveWarehouse({ code: str(fd, "code"), name: str(fd, "name"), type: oneOf(fd, "type", TipoBodega, "Tipo de bodega"), active: true }, opt(fd, "id") ?? undefined);
     return { message: "Bodega guardada." };
   });
 }
@@ -155,9 +163,16 @@ export async function orderTransitionAction(_: ActionResult | null, fd: FormData
   return run(async () => {
     const id = str(fd, "id");
     const op = str(fd, "op");
-    if (op === "start") await production.startProductionOrder(id);
-    else if (op === "cancel") await production.cancelProductionOrder(id);
-    return { message: op === "start" ? "Orden iniciada: lotes reservados con FEFO." : "Orden anulada: reservas liberadas." };
+    switch (op) {
+      case "start":
+        await production.startProductionOrder(id);
+        return { message: "Orden iniciada: lotes reservados con FEFO." };
+      case "cancel":
+        await production.cancelProductionOrder(id);
+        return { message: "Orden anulada: reservas liberadas." };
+      default:
+        throw new DomainError("Operación no válida.");
+    }
   });
 }
 
@@ -168,7 +183,7 @@ export async function completeOrderAction(_: ActionResult | null, fd: FormData) 
     const qtys = all(fd, "consumed.qty");
     ids.forEach((id, i) => {
       const v = toNum(qtys[i] ?? "");
-      if (Number.isNaN(v)) throw new Error("Revisa las cantidades consumidas.");
+      if (Number.isNaN(v)) throw new DomainError("Revisa las cantidades consumidas.");
       consumed[id] = v;
     });
     await production.completeProductionOrder({
@@ -195,10 +210,19 @@ export async function lotStatusAction(_: ActionResult | null, fd: FormData) {
     const id = str(fd, "lotId");
     const op = str(fd, "op");
     const note = str(fd, "note");
-    if (op === "release") await inv.releaseLot(id, note);
-    else if (op === "reject") await inv.rejectLot(id, note);
-    else await inv.quarantineLot(id, note);
-    return { message: op === "release" ? "Lote liberado: disponible para usar y despachar." : op === "reject" ? "Lote rechazado y bloqueado." : "Lote puesto en cuarentena." };
+    switch (op) {
+      case "release":
+        await inv.releaseLot(id, note);
+        return { message: "Lote liberado: disponible para usar y despachar." };
+      case "reject":
+        await inv.rejectLot(id, note);
+        return { message: "Lote rechazado y bloqueado." };
+      case "quarantine":
+        await inv.quarantineLot(id, note);
+        return { message: "Lote puesto en cuarentena." };
+      default:
+        throw new DomainError("Operación no válida.");
+    }
   });
 }
 
@@ -224,12 +248,16 @@ export async function createPurchaseAction(_: ActionResult | null, fd: FormData)
 export async function purchaseTransitionAction(_: ActionResult | null, fd: FormData) {
   return run(async () => {
     const id = str(fd, "id");
-    if (str(fd, "op") === "send") {
-      await purchasing.sendPurchaseOrder(id);
-      return { message: "OC enviada al proveedor." };
+    switch (str(fd, "op")) {
+      case "send":
+        await purchasing.sendPurchaseOrder(id);
+        return { message: "OC enviada al proveedor." };
+      case "cancel":
+        await purchasing.cancelPurchaseOrder(id);
+        return { message: "OC anulada." };
+      default:
+        throw new DomainError("Operación no válida.");
     }
-    await purchasing.cancelPurchaseOrder(id);
-    return { message: "OC anulada." };
   });
 }
 
@@ -239,7 +267,7 @@ export async function receiveAction(_: ActionResult | null, fd: FormData) {
     const qtys = all(fd, "r.quantity");
     const lots = all(fd, "r.lotCode");
     const exps = all(fd, "r.expiryDate");
-    const bultos = all(fd, "r.containers");
+    const containerCounts = all(fd, "r.containers");
     const rec = await purchasing.receivePurchaseOrder({
       orderId: str(fd, "id"),
       supplierRemission: str(fd, "supplierRemission"),
@@ -249,8 +277,8 @@ export async function receiveAction(_: ActionResult | null, fd: FormData) {
         lineId,
         quantity: toNum(qtys[i] ?? "") || 0,
         lotCode: lots[i] || null,
-        expiryDate: exps[i] ? new Date(`${exps[i]}T12:00:00-05:00`) : null,
-        containers: Math.max(1, Math.floor(toNum(bultos[i] ?? "1") || 1)),
+        expiryDate: exps[i] ? parseLocalDate(exps[i]) : null,
+        containers: Math.max(1, Math.floor(toNum(containerCounts[i] ?? "1") || 1)),
       })),
     });
     return { message: `Recepción ${rec.code} registrada. Imprime las etiquetas de los bultos.`, data: { receiptId: rec.id } };
@@ -272,7 +300,7 @@ export async function addShipmentAction(_: ActionResult | null, fd: FormData) {
 
 export async function shipmentEventAction(_: ActionResult | null, fd: FormData) {
   return run(async () => {
-    await purchasing.addShipmentEvent(str(fd, "shipmentId"), str(fd, "status") as EstadoEnvio, opt(fd, "note"), date(fd, "occurredAt"));
+    await purchasing.addShipmentEvent(str(fd, "shipmentId"), oneOf(fd, "status", EstadoEnvio, "Estado del envío"), opt(fd, "note"), date(fd, "occurredAt"));
     return { message: "Estado del envío actualizado." };
   });
 }
@@ -284,7 +312,7 @@ export async function adjustDownAction(_: ActionResult | null, fd: FormData) {
     const adj = await inv.adjustContainerDown({
       containerId: str(fd, "containerId"),
       quantity: req(fd, "quantity", "Cantidad"),
-      reason: str(fd, "reason") as MotivoAjuste,
+      reason: oneOf(fd, "reason", MotivoAjuste, "Motivo"),
       notes: opt(fd, "notes"),
     });
     return { message: `Ajuste ${adj.code} registrado.` };
@@ -301,7 +329,7 @@ export async function adjustUpAction(_: ActionResult | null, fd: FormData) {
       unitCost: num(fd, "unitCost"),
       lotCode: opt(fd, "lotCode"),
       expiryDate: date(fd, "expiryDate"),
-      reason: str(fd, "reason") as MotivoAjuste,
+      reason: oneOf(fd, "reason", MotivoAjuste, "Motivo"),
       notes: opt(fd, "notes"),
     });
     return { message: `Ajuste ${adj.code} registrado. Imprime las etiquetas de los bultos nuevos.`, data: { adjustmentId: adj.id } };
@@ -369,13 +397,22 @@ export async function countTransitionAction(_: ActionResult | null, fd: FormData
   return run(async () => {
     const id = str(fd, "id");
     const op = str(fd, "op");
-    if (op === "close") await inv.closeCycleCount(id);
-    else if (op === "approve") {
-      const comments: Record<string, string> = {};
-      for (const [k, v] of fd.entries()) if (k.startsWith("comment.")) comments[k.slice(8)] = String(v);
-      await inv.approveCycleCount(id, comments);
-    } else await inv.cancelCycleCount(id);
-    return { message: op === "close" ? "Conteo cerrado: revisa las diferencias." : op === "approve" ? "Conteo aprobado: ajustes generados." : "Conteo anulado." };
+    switch (op) {
+      case "close":
+        await inv.closeCycleCount(id);
+        return { message: "Conteo cerrado: revisa las diferencias." };
+      case "approve": {
+        const comments: Record<string, string> = {};
+        for (const [k, v] of fd.entries()) if (k.startsWith("comment.")) comments[k.slice(8)] = String(v);
+        await inv.approveCycleCount(id, comments);
+        return { message: "Conteo aprobado: ajustes generados." };
+      }
+      case "cancel":
+        await inv.cancelCycleCount(id);
+        return { message: "Conteo anulado." };
+      default:
+        throw new DomainError("Operación no válida.");
+    }
   });
 }
 
@@ -403,14 +440,20 @@ export async function dispatchTransitionAction(_: ActionResult | null, fd: FormD
   const result = await run(async () => {
     const id = str(fd, "id");
     const op = str(fd, "op");
-    if (op === "pick") await dispatches.startPicking(id);
-    else if (op === "unpick") await dispatches.cancelPicking(id);
-    else if (op === "delete") {
-      await dispatches.cancelDispatch(id);
-      deleted = true;
-      return { message: "Despacho eliminado." };
+    switch (op) {
+      case "pick":
+        await dispatches.startPicking(id);
+        return { message: "Bultos asignados con FEFO. Verifica cada caja con el escáner." };
+      case "unpick":
+        await dispatches.cancelPicking(id);
+        return { message: "Alistamiento cancelado." };
+      case "delete":
+        await dispatches.cancelDispatch(id);
+        deleted = true;
+        return { message: "Despacho eliminado." };
+      default:
+        throw new DomainError("Operación no válida.");
     }
-    return { message: op === "pick" ? "Bultos asignados con FEFO. Verifica cada caja con el escáner." : "Alistamiento cancelado." };
   });
   // La página del despacho eliminado ya no existe: se redirige desde el servidor.
   if (deleted) redirect("/despachos");
@@ -443,8 +486,8 @@ export async function shipDispatchAction(_: ActionResult | null, fd: FormData) {
 export async function attachProofAction(_: ActionResult | null, fd: FormData) {
   return run(async () => {
     const file = fd.get("proof");
-    if (!(file instanceof File) || file.size === 0) throw new Error("Selecciona la foto o PDF de la remisión firmada.");
-    if (file.size > 2_000_000) throw new Error("El archivo supera 2 MB.");
+    if (!(file instanceof File) || file.size === 0) throw new DomainError("Selecciona la foto o PDF de la remisión firmada.");
+    if (file.size > dispatches.MAX_PROOF_BYTES) throw new DomainError("El archivo supera 2 MB.");
     const buf = Buffer.from(await file.arrayBuffer());
     await dispatches.attachProof(str(fd, "id"), `data:${file.type || "application/octet-stream"};base64,${buf.toString("base64")}`);
     return { message: "Remisión firmada adjunta (prueba de entrega)." };
@@ -453,28 +496,56 @@ export async function attachProofAction(_: ActionResult | null, fd: FormData) {
 
 // ───────────────────────── Confirmación de propuestas del Copiloto (RN-13.1) ─────────────────────────
 
-export async function confirmOrderProposalAction(p: { productId: string; quantity: number; plannedDate: string | null; notes: string | null }) {
+// Las propuestas llegan desde el navegador: se validan antes de crear cualquier documento.
+const OrderProposal = z.object({
+  productId: z.string().min(1),
+  quantity: z.number().positive(),
+  plannedDate: z.string().nullish(),
+  notes: z.string().nullish(),
+});
+const PurchaseProposal = z.object({
+  supplierId: z.string().min(1),
+  notes: z.string().nullish(),
+  lines: z.array(z.object({ productId: z.string().min(1), quantity: z.number().positive(), unit: z.string().min(1), unitPrice: z.number().nonnegative() })).min(1),
+});
+const RecipeProposal = z.object({
+  productId: z.string().min(1),
+  name: z.string().min(1),
+  yieldQuantity: z.number().positive(),
+  items: z.array(z.object({ ingredientId: z.string().min(1), quantity: z.number().positive(), unit: z.string().min(1) })).min(1),
+});
+
+function parseProposal<T>(schema: z.ZodType<T>, input: unknown): T {
+  const r = schema.safeParse(input);
+  if (!r.success) throw new DomainError("La propuesta no es válida; pídele al Copiloto que la genere de nuevo.");
+  return r.data;
+}
+
+export async function confirmOrderProposalAction(input: z.input<typeof OrderProposal>) {
   return run(async () => {
+    const p = parseProposal(OrderProposal, input);
     const o = await production.createProductionOrder({
       productId: p.productId,
       quantity: p.quantity,
-      plannedDate: p.plannedDate ? new Date(`${p.plannedDate}T12:00:00-05:00`) : null,
-      notes: p.notes,
+      plannedDate: p.plannedDate ? parseLocalDate(p.plannedDate) : null,
+      notes: p.notes ?? null,
       createdByAI: true,
     });
     return { message: `Orden ${o.code} creada en borrador.`, redirect: `/produccion/${o.id}` };
   });
 }
 
-export async function confirmPurchaseProposalAction(p: { supplierId: string; notes: string | null; lines: { productId: string; quantity: number; unit: string; unitPrice: number }[] }) {
+export async function confirmPurchaseProposalAction(input: z.input<typeof PurchaseProposal>) {
   return run(async () => {
-    const po = await purchasing.createPurchaseOrder({ supplierId: p.supplierId, notes: p.notes, lines: p.lines, createdByAI: true });
+    const p = parseProposal(PurchaseProposal, input);
+    const po = await purchasing.createPurchaseOrder({ supplierId: p.supplierId, notes: p.notes ?? null, lines: p.lines, createdByAI: true });
     return { message: `Orden de compra ${po.code} creada en borrador.`, redirect: `/compras/${po.id}` };
   });
 }
 
-export async function confirmRecipeProposalAction(p: { productId: string; name: string; yieldQuantity: number; items: { ingredientId: string; quantity: number; unit: string }[] }) {
+export async function confirmRecipeProposalAction(input: z.input<typeof RecipeProposal>) {
   return run(async () => {
+    const p = parseProposal(RecipeProposal, input);
     const r = await production.saveRecipe({ ...p, createdByAI: true });
     return { message: "Fórmula guardada.", redirect: `/formulas/${r.productId}` };
   });

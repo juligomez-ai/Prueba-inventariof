@@ -6,7 +6,7 @@ import { PoStatusBadge } from "@/components/badges";
 import { ShipmentCard } from "@/components/shipment-card";
 import { Badge, ButtonLink, Card, CardBody, CardHeader, Empty, Field, Input, Notice, PageHeader, Select, Table, Td, Th } from "@/components/ui";
 import { prisma } from "@/infrastructure/database/prisma";
-import { fmtDate, fmtDateTime, fmtMoney, fmtQty, n } from "@/shared/numbers";
+import { fmtDate, fmtDateTime, fmtMoney, fmtQty, n, QTY_EPSILON } from "@/shared/numbers";
 
 export default async function PurchasePage(props: PageProps<"/compras/[id]">) {
   const { id } = await props.params;
@@ -119,7 +119,7 @@ export default async function PurchasePage(props: PageProps<"/compras/[id]">) {
                   </div>
                   {o.lines.map((l) => {
                     const pending = (n(l.quantity) * n(l.factor) - n(l.receivedQty)) / n(l.factor);
-                    if (pending <= 1e-9) return null;
+                    if (pending <= QTY_EPSILON) return null;
                     return (
                       <fieldset key={l.id} className="rounded-lg border border-border p-3">
                         <legend className="px-1 text-sm font-medium">{l.product.name} <span className="font-normal text-muted">· pendiente {fmtQty(pending)} {l.unit}</span></legend>

@@ -6,7 +6,7 @@ import { CountStatusBadge } from "@/components/badges";
 import { CountScanner } from "@/components/count-scanner";
 import { Badge, Card, CardBody, CardHeader, Empty, Input, Notice, PageHeader, Stat, Table, Td, Th } from "@/components/ui";
 import { prisma } from "@/infrastructure/database/prisma";
-import { fmtDateTime, fmtMoney, fmtPct, fmtQty, n } from "@/shared/numbers";
+import { fmtDateTime, fmtMoney, fmtPct, fmtQty, n, QTY_EPSILON } from "@/shared/numbers";
 
 export default async function CountPage(props: PageProps<"/conteos/[id]">) {
   const { id } = await props.params;
@@ -21,7 +21,7 @@ export default async function CountPage(props: PageProps<"/conteos/[id]">) {
   if (!c) notFound();
   const adjustments = c.status === "APROBADO" ? await prisma.stockMovement.findMany({ where: { documentType: "CC", documentId: c.id }, include: { product: true, container: true } }) : [];
   const diffs = c.lines.map((l) => ({ l, diff: n(l.countedQty) - n(l.systemQty), value: (n(l.countedQty) - n(l.systemQty)) * n(l.product.avgCost) }));
-  const exact = diffs.filter((d) => Math.abs(d.diff) < 1e-9).length;
+  const exact = diffs.filter((d) => Math.abs(d.diff) < QTY_EPSILON).length;
   const accuracy = c.lines.length ? (exact / c.lines.length) * 100 : 0;
   const netValue = diffs.reduce((s, d) => s + d.value, 0);
 
@@ -94,16 +94,16 @@ export default async function CountPage(props: PageProps<"/conteos/[id]">) {
                 <thead><tr><Th>Serial</Th><Th>Producto</Th><Th>Lote</Th><Th>Captura</Th><Th className="text-right">Sistema</Th><Th className="text-right">Contado</Th><Th className="text-right">Diferencia</Th><Th className="text-right">Valor</Th><Th>Comentario</Th></tr></thead>
                 <tbody>
                   {diffs.map(({ l, diff, value }) => (
-                    <tr key={l.id} className={Math.abs(diff) > 1e-9 ? "bg-amber-50" : ""}>
+                    <tr key={l.id} className={Math.abs(diff) > QTY_EPSILON ? "bg-amber-50" : ""}>
                       <Td className="font-mono text-xs">{l.container?.serial}</Td>
                       <Td>{l.product.name}</Td>
                       <Td className="text-xs">{l.container?.lot?.code ?? "—"}</Td>
                       <Td>{l.notFound ? <Badge tone="red">No encontrado</Badge> : l.sealedOk ? <Badge tone="blue">Sellada</Badge> : <Badge tone="yellow">Contada</Badge>}</Td>
                       <Td className="text-right tabular">{fmtQty(n(l.systemQty), l.product.baseUnit)}</Td>
                       <Td className="text-right tabular">{fmtQty(n(l.countedQty), l.product.baseUnit)}</Td>
-                      <Td className={`text-right font-medium tabular ${diff < 0 ? "text-red-700" : diff > 0 ? "text-green-700" : ""}`}>{Math.abs(diff) > 1e-9 ? fmtQty(diff) : "—"}</Td>
-                      <Td className="text-right tabular">{Math.abs(diff) > 1e-9 ? fmtMoney(value) : ""}</Td>
-                      <Td className="min-w-48">{c.status === "EN_REVISION" && Math.abs(diff) > 1e-9 ? <Input name={`comment.${l.id}`} defaultValue={l.comment ?? ""} placeholder="Motivo" /> : <span className="text-xs">{l.comment}</span>}</Td>
+                      <Td className={`text-right font-medium tabular ${diff < 0 ? "text-red-700" : diff > 0 ? "text-green-700" : ""}`}>{Math.abs(diff) > QTY_EPSILON ? fmtQty(diff) : "—"}</Td>
+                      <Td className="text-right tabular">{Math.abs(diff) > QTY_EPSILON ? fmtMoney(value) : ""}</Td>
+                      <Td className="min-w-48">{c.status === "EN_REVISION" && Math.abs(diff) > QTY_EPSILON ? <Input name={`comment.${l.id}`} defaultValue={l.comment ?? ""} placeholder="Motivo" /> : <span className="text-xs">{l.comment}</span>}</Td>
                     </tr>
                   ))}
                 </tbody>

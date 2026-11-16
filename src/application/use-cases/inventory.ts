@@ -1,9 +1,9 @@
 import type { EstadoLote, MotivoAjuste } from "@prisma/client";
 import { splitIntoCount } from "@/domain/services/codes";
-import { inTransaction, nextSequence, pad, prisma, type Db } from "@/infrastructure/database/prisma";
-import { postContainerIncrease, postEntry, postExit, transferContainer } from "@/infrastructure/database/stock";
+import { inTransaction, nextDocCode, prisma, type Db } from "@/infrastructure/database/prisma";
+import { ACTIVE_STATUSES, findOrCreateLot, postContainerIncrease, postEntry, postExit, transferContainer } from "@/infrastructure/database/stock";
 import { DomainError } from "@/shared/errors";
-import { n, round4 } from "@/shared/numbers";
+import { n, round4, QTY_EPSILON } from "@/shared/numbers";
 import { CURRENT_USER } from "@/shared/user";
 
 // ───────────────────────── Calidad / estados del lote (RF-5.7 a RF-5.10) ─────────────────────────
@@ -36,12 +36,15 @@ const reasonText: Record<MotivoAjuste, string> = {
   CONTEO: "Conteo",
 };
 
-/** Ajuste negativo o baja sobre un bulto (RN-11.1: vencidos y dañados salen como BAJA · SCR). */
+/** Motivos que se registran como baja (SCR) y no como ajuste negativo (RN-11.1). */
+const WRITE_OFF_REASONS: MotivoAjuste[] = ["VENCIDO", "DANADO", "MERMA_PROCESO"];
+
+/** Ajuste negativo o baja sobre un bulto: vencidos, dañados y mermas salen como BAJA · SCR (RN-11.1). */
 export async function adjustContainerDown(input: { containerId: string; quantity: number; reason: MotivoAjuste; notes?: string | null }) {
   return inTransaction(async (tx) => {
-    const code = `AJ-${pad(await nextSequence(tx, "AJ"))}`;
+    const code = await nextDocCode(tx, "AJ");
     const adj = await tx.adjustment.create({ data: { code, reason: input.reason, notes: input.notes, userName: CURRENT_USER } });
-    const type = input.reason === "VENCIDO" || input.reason === "DANADO" || input.reason === "MERMA_PROCESO" ? "BAJA" : "AJUSTE_SAL";
+    const type = WRITE_OFF_REASONS.includes(input.reason) ? "BAJA" : "AJUSTE_SAL";
     await postExit(tx, {
       type,
       containerId: input.containerId,
@@ -71,15 +74,10 @@ export async function adjustUp(input: {
     if (p.tracksLot) {
       if (!input.lotCode?.trim()) throw new DomainError(`${p.name} controla lote: indica el lote.`);
       if (p.tracksExpiry && !input.expiryDate) throw new DomainError(`${p.name} controla vencimiento: indica la fecha.`);
-      const code = input.lotCode.trim();
-      const lot = await tx.lot.upsert({
-        where: { productId_code: { productId: p.id, code } },
-        create: { productId: p.id, code, expiryDate: input.expiryDate, sourceType: "AJUSTE" },
-        update: {},
-      });
+      const lot = await findOrCreateLot(tx, p.id, input.lotCode.trim(), input.expiryDate, { sourceType: "AJUSTE" });
       lotId = lot.id;
     }
-    const code = `AJ-${pad(await nextSequence(tx, "AJ"))}`;
+    const code = await nextDocCode(tx, "AJ");
     const adj = await tx.adjustment.create({ data: { code, reason: input.reason, notes: input.notes, userName: CURRENT_USER } });
     if (lotId) await tx.lot.update({ where: { id: lotId }, data: { sourceRef: code } });
     await postEntry(tx, {
@@ -109,11 +107,14 @@ export async function transfer(input: { containerId: string; toWarehouseId: stri
   return inTransaction(async (tx) => {
     const c = await tx.container.findUniqueOrThrow({ where: { id: input.containerId } });
     const qty = input.quantity ?? n(c.currentQty);
-    // RN-2.2: no se traslada lo reservado
-    const reserved = await tx.reservation.aggregate({ where: { containerId: c.id, order: { status: "EN_PROCESO" } }, _sum: { quantity: true } });
-    if (qty > n(c.currentQty) - n(reserved._sum.quantity) + 1e-9)
-      throw new DomainError(`Parte del bulto ${c.serial} está reservada para una orden de producción.`);
-    const code = `TR-${pad(await nextSequence(tx, "TR"))}`;
+    // RN-2.2: no se traslada lo reservado para producción ni lo asignado a un despacho
+    const [reserved, allocated] = await Promise.all([
+      tx.reservation.aggregate({ where: { containerId: c.id, order: { status: "EN_PROCESO" } }, _sum: { quantity: true } }),
+      tx.dispatchAllocation.aggregate({ where: { containerId: c.id, dispatch: { status: { in: ["PENDIENTE", "EN_ALISTAMIENTO"] } } }, _sum: { quantity: true } }),
+    ]);
+    if (qty > n(c.currentQty) - n(reserved._sum.quantity) - n(allocated._sum.quantity) + QTY_EPSILON)
+      throw new DomainError(`Parte del bulto ${c.serial} está reservada para una orden de producción o asignada a un despacho.`);
+    const code = await nextDocCode(tx, "TR");
     const t = await tx.transfer.create({ data: { code, fromWarehouseId: c.warehouseId, toWarehouseId: input.toWarehouseId, notes: input.notes, userName: CURRENT_USER } });
     await transferContainer(tx, c.id, input.toWarehouseId, qty, { documentType: "TR", documentId: t.id, documentNumber: code, reason: input.notes });
     return t;
@@ -138,7 +139,7 @@ export async function resolveCode(code: string, db: Db = prisma) {
 export async function createCycleCount(input: { warehouseId: string; productIds: string[]; notes?: string | null }) {
   if (input.productIds.length === 0) throw new DomainError("Selecciona al menos un producto para contar.");
   return inTransaction(async (tx) => {
-    const code = `CC-${pad(await nextSequence(tx, "CC"))}`;
+    const code = await nextDocCode(tx, "CC");
     return tx.cycleCount.create({
       data: { code, warehouseId: input.warehouseId, notes: input.notes, userName: CURRENT_USER, items: { create: input.productIds.map((productId) => ({ productId })) } },
     });
@@ -192,7 +193,7 @@ export async function closeCycleCount(countId: string) {
     if (count.status !== "EN_CURSO") throw new DomainError("El conteo ya fue cerrado.");
     const scanned = new Set(count.lines.map((l) => l.containerId));
     const expected = await tx.container.findMany({
-      where: { warehouseId: count.warehouseId, productId: { in: count.items.map((i) => i.productId) }, status: { in: ["SELLADO", "ABIERTO"] } },
+      where: { warehouseId: count.warehouseId, productId: { in: count.items.map((i) => i.productId) }, status: { in: ACTIVE_STATUSES } },
     });
     for (const c of expected)
       if (!scanned.has(c.id))
@@ -202,24 +203,30 @@ export async function closeCycleCount(countId: string) {
 }
 
 /** Aprobar: genera ajustes sobre cada serial con diferencia (RF-10.8, RN-10.3). */
-export async function approveCycleCount(countId: string, comments: Record<string, string> = {}, thresholdValue = 50_000) {
+/** RN-10.2: una diferencia de conteo que vale más que esto (en pesos) exige un comentario. */
+const COUNT_COMMENT_THRESHOLD_COP = 50_000;
+
+export async function approveCycleCount(countId: string, comments: Record<string, string> = {}, thresholdValue = COUNT_COMMENT_THRESHOLD_COP) {
   return inTransaction(async (tx) => {
     const count = await tx.cycleCount.findUniqueOrThrow({ where: { id: countId }, include: { lines: { include: { product: true, container: true } } } });
     if (count.status !== "EN_REVISION") throw new DomainError("Primero cierra el conteo.");
     const doc = { documentType: "CC" as const, documentId: count.id, documentNumber: count.code, reason: `Conteo cíclico ${count.code}` };
     for (const l of count.lines) {
       if (!l.containerId || !l.container) continue;
-      // Diferencia contra el stock actual del bulto (refleja movimientos ocurridos durante el conteo)
+      // Diferencia contra la cantidad del sistema registrada al escanear el bulto
       const diff = round4(n(l.countedQty) - n(l.systemQty));
-      if (Math.abs(diff) < 1e-9) continue;
+      if (Math.abs(diff) < QTY_EPSILON) continue;
       const comment = comments[l.id]?.trim() || l.comment?.trim();
       // RN-10.2: diferencias de valor alto requieren comentario
       if (Math.abs(diff * n(l.product.avgCost)) > thresholdValue && !comment)
         throw new DomainError(`${l.product.name} (${l.container.serial}): la diferencia supera $${thresholdValue.toLocaleString("es-CO")}; agrega un comentario.`);
       if (comment) await tx.cycleCountLine.update({ where: { id: l.id }, data: { comment } });
       const lineDoc = { ...doc, reason: [doc.reason, comment].filter(Boolean).join(" · ") };
-      if (diff < 0) await postExit(tx, { type: "AJUSTE_SAL", containerId: l.containerId, quantity: Math.min(-diff, n(l.container.currentQty)), doc: lineDoc });
-      else await postContainerIncrease(tx, l.containerId, diff, lineDoc);
+      if (diff < 0) {
+        // Si el bulto se consumió mientras se contaba, solo se ajusta lo que aún queda en él
+        const exitQty = Math.min(-diff, n(l.container.currentQty));
+        if (exitQty > QTY_EPSILON) await postExit(tx, { type: "AJUSTE_SAL", containerId: l.containerId, quantity: exitQty, doc: lineDoc });
+      } else await postContainerIncrease(tx, l.containerId, diff, lineDoc);
     }
     return tx.cycleCount.update({ where: { id: countId }, data: { status: "APROBADO", approvedAt: new Date() } });
   });

@@ -844,7 +844,8 @@ src/
 **Decisiones clave**
 - Las reglas de costo (promedio ponderado), FEFO, requerimientos de fórmula y ABC viven en **servicios de dominio puros**, probados sin base de datos.
 - **Todo el stock vive en bultos serializados.** El saldo de un producto es la suma de sus bultos, y cada movimiento del Kardex apunta a un bulto. Todo cambio pasa por `infrastructure/database/stock.ts`, dentro de una transacción serializable: crea el movimiento, ajusta el bulto y recalcula el costo. Así el Kardex y los bultos nunca se desalinean (`npm run check:seed` lo verifica).
-- La IA usa los mismos casos de uso que la interfaz: no hay una "segunda lógica" para el Copiloto.
+- La IA usa los mismos casos de uso que la interfaz: no hay una "segunda lógica" para el Copiloto. Por eso `infrastructure/ai/` es un adaptador que se apoya en `application/` (como las pantallas), y no al revés.
+- Las Server Actions son endpoints públicos: validan los valores de listas cerradas y las propuestas del Copiloto (zod) antes de llamar a los casos de uso, y solo muestran al usuario los errores de negocio; los errores internos se registran sin exponer detalles.
 
 ---
 
