@@ -29,8 +29,6 @@ export const movementLabel: Record<TipoMovimiento, { name: string; code: string;
   BAJA: { name: "Baja", code: "SCR", meaning: "Scrap / Write-off" },
   INV_INICIAL: { name: "Inventario inicial", code: "OB", meaning: "Opening Balance" },
 };
-export const movementText = (t: TipoMovimiento) => `${movementLabel[t].name} (${movementLabel[t].code})`;
-
 export const documentLabel: Record<TipoDocumento, { name: string; intl: string }> = {
   OC: { name: "Orden de compra", intl: "PO" },
   OP: { name: "Orden de producción", intl: "MO" },

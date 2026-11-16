@@ -58,7 +58,10 @@ export async function purchaseOrderPdf(d: PurchaseOrderPdfData) {
     { h: "Precio unit.", xr: M + 420 }, { h: "IVA", xr: M + 455 }, { h: "Subtotal", xr: M + W - 4 },
   ];
   page.drawRectangle({ x: M, y: y - 4, width: W, height: 16, color: rgb(0.94, 0.93, 0.9) });
-  for (const c of cols) "xr" in c ? right(c.h, c.xr!, y, 8, bold) : text(c.h, c.x!, y, 8, bold);
+  for (const c of cols) {
+    if ("xr" in c) right(c.h, c.xr!, y, 8, bold);
+    else text(c.h, c.x!, y, 8, bold);
+  }
   y -= 18;
   for (const l of d.lines) {
     text(l.sku, M + 4, y, 8);

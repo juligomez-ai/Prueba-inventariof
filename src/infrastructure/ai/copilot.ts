@@ -5,7 +5,7 @@ import { executeTool, tools, type Proposal } from "./tools";
  * Cadena de modelos: si uno está saturado (503), con límite (429) o ya no existe (404),
  * se usa el siguiente. GEMINI_MODEL, si se define, va primero.
  */
-export const MODEL_CHAIN = [
+const MODEL_CHAIN = [
   ...new Set([process.env.GEMINI_MODEL, "gemini-3.5-flash", "gemini-flash-latest", "gemini-3.5-flash-lite"].filter(Boolean) as string[]),
 ];
 export const COPILOT_MODEL = MODEL_CHAIN[0];

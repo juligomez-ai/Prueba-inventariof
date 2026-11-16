@@ -12,7 +12,7 @@ export interface AllocatableContainer {
  * a igual vencimiento, el bulto con menor cantidad (para vaciar primero los abiertos);
  * luego el más antiguo. Los que no vencen van al final.
  */
-export function fefoSort<T extends AllocatableContainer>(containers: T[]): T[] {
+function fefoSort<T extends AllocatableContainer>(containers: T[]): T[] {
   return [...containers].sort((a, b) => {
     const ea = a.expiryDate?.getTime() ?? Number.MAX_SAFE_INTEGER;
     const eb = b.expiryDate?.getTime() ?? Number.MAX_SAFE_INTEGER;

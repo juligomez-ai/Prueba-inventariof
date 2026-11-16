@@ -3,8 +3,8 @@ import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 
 const MM = 72 / 25.4;
 /** Etiqueta térmica de 50 × 25 mm (RF-5.1.5). */
-export const LABEL_W = 50 * MM;
-export const LABEL_H = 25 * MM;
+const LABEL_W = 50 * MM;
+const LABEL_H = 25 * MM;
 
 export interface LabelData {
   code: string; // texto del código de barras (serial o SKU)

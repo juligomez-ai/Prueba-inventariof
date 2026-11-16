@@ -8,7 +8,7 @@ import { CURRENT_USER } from "@/shared/user";
 
 // ───────────────────────── Calidad / estados del lote (RF-5.7 a RF-5.10) ─────────────────────────
 
-export async function changeLotStatus(lotId: string, to: EstadoLote, reason: string) {
+async function changeLotStatus(lotId: string, to: EstadoLote, reason: string) {
   if (!reason.trim()) throw new DomainError("El motivo o nota es obligatorio.");
   return inTransaction(async (tx) => {
     const lot = await tx.lot.findUniqueOrThrow({ where: { id: lotId } });
@@ -26,7 +26,7 @@ export const quarantineLot = (lotId: string, reason: string) => changeLotStatus(
 
 // ───────────────────────── Ajustes (M11) ─────────────────────────
 
-export const reasonText: Record<MotivoAjuste, string> = {
+const reasonText: Record<MotivoAjuste, string> = {
   MERMA_PROCESO: "Merma de proceso",
   DANADO: "Producto dañado",
   VENCIDO: "Vencido",

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { fmtMoney } from "@/shared/numbers";
 
 /** Colores validados (luminosidad, croma, separación para daltonismo y contraste vs blanco). */
-export const CHART = { primary: "#00A08E", secondary: "#E0653A", previous: "#9CA3AF" };
+const CHART = { primary: "#00A08E", secondary: "#E0653A", previous: "#9CA3AF" };
 
 const shortMoney = (v: number) =>
   Math.abs(v) >= 1_000_000 ? `$${(v / 1_000_000).toLocaleString("es-CO", { maximumFractionDigits: 1 })} M` : Math.abs(v) >= 1000 ? `$${Math.round(v / 1000).toLocaleString("es-CO")} mil` : `$${Math.round(v)}`;

@@ -1,5 +1,5 @@
 import type { OrigenLote, TipoDocumento, TipoMovimiento } from "@prisma/client";
-import { allocate, type AllocatableContainer } from "@/domain/services/allocation";
+import { type AllocatableContainer } from "@/domain/services/allocation";
 import { formatSerial } from "@/domain/services/codes";
 import { weightedAverage } from "@/domain/services/weightedAverageCost";
 import { DomainError } from "@/shared/errors";
@@ -35,7 +35,7 @@ async function nextMovementNumber(tx: Tx) {
   return nextSequence(tx, "KARDEX");
 }
 
-export async function nextSerial(tx: Tx, sku: string) {
+async function nextSerial(tx: Tx, sku: string) {
   return formatSerial(sku, await nextSequence(tx, `SERIAL:${sku}`));
 }
 
@@ -323,10 +323,6 @@ export async function availableContainers(
 export async function availableQty(db: Db, productId: string, opts?: Parameters<typeof availableContainers>[2]) {
   const cs = await availableContainers(db, productId, opts);
   return round4(cs.reduce((s, c) => s + c.available, 0));
-}
-
-export async function allocateFefo(db: Db, productId: string, quantity: number, opts?: Parameters<typeof availableContainers>[2]) {
-  return allocate(await availableContainers(db, productId, opts), quantity);
 }
 
 export function startOfToday() {

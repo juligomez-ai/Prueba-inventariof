@@ -1,6 +1,5 @@
 /** Redondeo controlado: cantidades a 4 decimales y dinero a 2. */
 export const round4 = (v: number) => Math.round((v + Number.EPSILON) * 10000) / 10000;
-export const round3 = (v: number) => Math.round((v + Number.EPSILON) * 1000) / 1000;
 export const round2 = (v: number) => Math.round((v + Number.EPSILON) * 100) / 100;
 
 /** Convierte Decimal de Prisma (o null) a number. */
